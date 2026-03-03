@@ -13,6 +13,7 @@ public record RoomEvent(EventType type, Object payload) {
         PARTICIPANT_READY,
         RECOMMENDATIONS_READY,
         MORE_RECOMMENDATIONS_READY,
+        RECOMMENDATIONS_FAILED,
         FILM_CHOSEN,
         ROOM_CLOSED,
         HOST_DISCONNECTED

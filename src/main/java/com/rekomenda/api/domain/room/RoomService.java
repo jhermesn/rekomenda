@@ -159,25 +159,41 @@ public class RoomService {
     }
 
     private void generateCollectiveRecommendations(Room room) {
+        var previousStatus = room.getStatus();
+        var previousMovies = List.copyOf(room.getFilmesRecomendados());
+
         room.setStatus(RoomStatus.GERANDO_RECOMENDACOES);
         roomRepository.save(room);
 
-        var combinedPrompt = buildCollectivePrompt(room);
-        var keywords = geminiService.extractKeywords(combinedPrompt);
-        var movieLimit = room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2;
+        try {
+            var combinedPrompt = buildCollectivePrompt(room);
+            var keywords = geminiService.extractKeywords(combinedPrompt);
+            var movieLimit = room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2;
 
-        var movies = keywords.stream()
-                .flatMap(keyword -> tmdbClient.searchByKeywords(keyword, (int) movieLimit).stream())
-                .distinct()
-                .limit(movieLimit)
-                .map(MovieResponse::from)
-                .toList();
+            var movies = keywords.stream()
+                    .flatMap(keyword -> tmdbClient.searchByKeywords(keyword, (int) movieLimit).stream())
+                    .distinct()
+                    .limit(movieLimit)
+                    .map(MovieResponse::from)
+                    .toList();
 
-        room.setFilmesRecomendados(List.copyOf(movies));
-        room.setStatus(RoomStatus.AGUARDANDO);
-        roomRepository.save(room);
+            room.setFilmesRecomendados(List.copyOf(movies));
+            room.setStatus(RoomStatus.AGUARDANDO);
+            roomRepository.save(room);
 
-        broadcast(room.getId(), RoomEvent.of(RoomEvent.EventType.RECOMMENDATIONS_READY, movies));
+            broadcast(room.getId(), RoomEvent.of(RoomEvent.EventType.RECOMMENDATIONS_READY, movies));
+        } catch (RuntimeException ex) {
+            // rollback para o último estado consistente
+            room.setFilmesRecomendados(previousMovies);
+            room.setStatus(previousStatus);
+            roomRepository.save(room);
+
+            broadcast(room.getId(), RoomEvent.of(
+                    RoomEvent.EventType.RECOMMENDATIONS_FAILED,
+                    "Não foi possível gerar recomendações coletivas. Tente novamente em alguns instantes."
+            ));
+            throw ex;
+        }
     }
 
     /**
