@@ -30,8 +30,8 @@ public class RecommendationService {
      * Falls back to popular movies when the user has no genre preferences yet.
      */
     @Transactional(readOnly = true)
-    public List<MovieResponse> getDashboard(String email) {
-        var user = userRepository.findByEmail(email)
+    public List<MovieResponse> getDashboard(String userId) {
+        var user = userRepository.findById(java.util.UUID.fromString(userId))
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
 
         var weights = user.getRecommendationWeights();

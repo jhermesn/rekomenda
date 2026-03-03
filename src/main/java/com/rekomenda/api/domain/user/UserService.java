@@ -20,13 +20,13 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserResponse getProfile(String email) {
-        return UserResponse.from(findByEmail(email));
+    public UserResponse getProfile(String userId) {
+        return UserResponse.from(findById(userId));
     }
 
     @Transactional
-    public UserResponse updateProfile(String email, UpdateUserRequest request) {
-        var user = findByEmail(email);
+    public UserResponse updateProfile(String userId, UpdateUserRequest request) {
+        var user = findById(userId);
 
         if (request.nome() != null) {
             user.setNome(request.nome());
@@ -46,8 +46,8 @@ public class UserService {
         return UserResponse.from(userRepository.save(user));
     }
 
-    private User findByEmail(String email) {
-        return userRepository.findByEmail(email)
+    private User findById(String userId) {
+        return userRepository.findById(java.util.UUID.fromString(userId))
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
     }
 }

@@ -9,7 +9,7 @@ import com.rekomenda.api.shared.security.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -75,11 +75,14 @@ public class AuthService {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.email(), request.senha())
             );
-        } catch (BadCredentialsException _) {
+        } catch (AuthenticationException _) {
             throw new BusinessException("E-mail ou senha incorretos", HttpStatus.UNAUTHORIZED);
         }
 
-        var token = jwtService.generateToken(request.email());
+        var user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
+
+        var token = jwtService.generateToken(user.getId().toString());
         return LoginResponse.bearer(token);
     }
 

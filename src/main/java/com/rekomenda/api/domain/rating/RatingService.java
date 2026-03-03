@@ -39,8 +39,8 @@ public class RatingService {
     }
 
     @Transactional
-    public RatingResponse rate(String email, CreateRatingRequest request) {
-        var user = findUser(email);
+    public RatingResponse rate(String userId, CreateRatingRequest request) {
+        var user = findUser(userId);
 
         var existingRating = ratingRepository.findByUserIdAndConteudoId(user.getId(), request.conteudoId());
 
@@ -63,8 +63,8 @@ public class RatingService {
     }
 
     @Transactional(readOnly = true)
-    public List<RatingResponse> getHistory(String email) {
-        var user = findUser(email);
+    public List<RatingResponse> getHistory(String userId) {
+        var user = findUser(userId);
         return ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(user.getId())
                 .stream()
                 .map(RatingResponse::from)
@@ -106,8 +106,8 @@ public class RatingService {
         weights.replaceAll((k, v) -> (v / max) * 100.0);
     }
 
-    private User findUser(String email) {
-        return userRepository.findByEmail(email)
+    private User findUser(String userId) {
+        return userRepository.findById(java.util.UUID.fromString(userId))
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
     }
 }
