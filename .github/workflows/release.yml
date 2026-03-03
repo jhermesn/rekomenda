@@ -27,8 +27,11 @@ jobs:
           distribution: temurin
           cache: maven
 
+      - name: Run tests
+        run: ./mvnw test -q
+
       - name: Build JAR
-        run: ./mvnw package -DskipTests -q
+        run: ./mvnw package -q
 
       - name: Compute version
         id: version
