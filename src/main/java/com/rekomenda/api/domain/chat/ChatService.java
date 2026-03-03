@@ -26,7 +26,12 @@ public class ChatService {
      * and does NOT modify the user's recommendation weight profile.
      */
     public ChatResponse recommend(ChatRequest request) {
-        var suggestedTitle = geminiService.recommendForIndividual(request.descricao());
+        String suggestedTitle;
+        try {
+            suggestedTitle = geminiService.recommendForIndividual(request.descricao());
+        } catch (RuntimeException _) {
+            throw new BusinessException("Serviço de recomendação indisponível no momento", HttpStatus.SERVICE_UNAVAILABLE);
+        }
 
         if (suggestedTitle.isBlank()) {
             throw new BusinessException("Não foi possível gerar uma recomendação", HttpStatus.SERVICE_UNAVAILABLE);
