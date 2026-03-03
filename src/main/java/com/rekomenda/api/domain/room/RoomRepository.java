@@ -1,6 +1,5 @@
 package com.rekomenda.api.domain.room;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -16,11 +15,9 @@ public class RoomRepository {
     private static final Duration TTL = Duration.ofMinutes(30);
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final ObjectMapper objectMapper;
 
-    public RoomRepository(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
+    public RoomRepository(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;
-        this.objectMapper = objectMapper;
     }
 
     public void save(Room room) {
@@ -30,8 +27,10 @@ public class RoomRepository {
 
     public Optional<Room> findById(String roomId) {
         var value = redisTemplate.opsForValue().get(KEY_PREFIX + roomId);
-        if (value == null) return Optional.empty();
-        return Optional.of(objectMapper.convertValue(value, Room.class));
+        if (value instanceof Room room) {
+            return Optional.of(room);
+        }
+        return Optional.empty();
     }
 
     public void delete(String roomId) {
