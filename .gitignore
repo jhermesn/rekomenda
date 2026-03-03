@@ -39,3 +39,8 @@ Thumbs.db
 
 # Environment vars
 .env
+
+# GCP service account credentials
+*-credentials.json
+rekomenda-app-*.json
+rekomenda-app-d52334709d79.json

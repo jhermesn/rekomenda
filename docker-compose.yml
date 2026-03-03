@@ -48,6 +48,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
+    volumes:
+      - ./rekomenda-app-d52334709d79.json:/app/gcp-credentials.json:ro
 
 volumes:
   postgres_data:
