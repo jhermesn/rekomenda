@@ -95,7 +95,7 @@ public class RatingService {
 
         normalise(weights);
         user.setRecommendationWeights(weights);
-        userRepository.save(user);
+        userRepository.saveAndFlush(user);
     }
 
     private void normalise(Map<String, Double> weights) {
