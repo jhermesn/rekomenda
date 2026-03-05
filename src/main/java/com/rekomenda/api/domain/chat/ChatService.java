@@ -3,6 +3,7 @@ package com.rekomenda.api.domain.chat;
 import com.rekomenda.api.domain.chat.dto.ChatRequest;
 import com.rekomenda.api.domain.chat.dto.ChatResponse;
 import com.rekomenda.api.domain.movie.MovieService;
+import com.rekomenda.api.domain.rating.Rating;
 import com.rekomenda.api.domain.rating.RatingRepository;
 import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
 import com.rekomenda.api.infrastructure.ai.GeminiService;
@@ -11,7 +12,8 @@ import com.rekomenda.api.shared.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-import java.util.Set;
+import java.util.HashSet;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -38,18 +40,21 @@ public class ChatService {
 
     /**
      * Asks Gemini for a movie title matching the user's description, excluding
-     * movies they have already rated. Searches TMDB and filters out rated movies.
+     * movies they have already rated and any temporarily blacklisted (e.g. from "more options").
      */
     public ChatResponse recommend(ChatRequest request, String userId) {
         var ratedIds = ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(UUID.fromString(userId))
                 .stream()
                 .limit(MAX_EXCLUDED_TITLES)
-                .map(r -> r.getConteudoId())
+                .map(Rating::getConteudoId)
                 .toList();
 
-        var excludedTitles = ratedIds.stream()
-                .map(id -> movieService.getTmdbMovieById(id))
-                .filter(opt -> opt.isPresent())
+        var excludedIds = new HashSet<>(ratedIds);
+        excludedIds.addAll(request.excludedMovieIds());
+
+        var excludedTitles = excludedIds.stream()
+                .map(id -> movieService.getTmdbMovieById(id.longValue()))
+                .filter(Optional::isPresent)
                 .map(opt -> opt.get().title())
                 .filter(t -> t != null && !t.isBlank())
                 .distinct()
@@ -59,7 +64,7 @@ public class ChatService {
         String suggestedTitle;
         try {
             suggestedTitle = geminiService.recommendForIndividual(request.descricao(), excludedTitles);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             throw new BusinessException("Serviço de recomendação indisponível no momento", HttpStatus.SERVICE_UNAVAILABLE);
         }
 
@@ -67,10 +72,9 @@ public class ChatService {
             throw new BusinessException("Não foi possível gerar uma recomendação", HttpStatus.SERVICE_UNAVAILABLE);
         }
 
-        var ratedIdSet = Set.copyOf(ratedIds);
         var results = tmdbClient.searchByKeywords(suggestedTitle, SEARCH_RESULTS_TO_FILTER)
                 .stream()
-                .filter(m -> !ratedIdSet.contains(m.id()))
+                .filter(m -> !excludedIds.contains(m.id()))
                 .toList();
 
         if (results.isEmpty()) {
