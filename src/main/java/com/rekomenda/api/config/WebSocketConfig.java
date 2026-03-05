@@ -9,6 +9,9 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import java.net.URI;
+import java.util.List;
+
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
@@ -30,9 +33,22 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        var origins = buildAllowedOrigins(frontendUrl);
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns(frontendUrl)
+                .setAllowedOriginPatterns(origins.toArray(new String[0]))
                 .withSockJS();
+    }
+
+    private static List<String> buildAllowedOrigins(String frontendUrl) {
+        var base = frontendUrl != null ? frontendUrl.trim().replaceAll("/+$", "") : "";
+        if (base.isEmpty()) return List.of("*");
+        try {
+            var uri = URI.create(base);
+            var origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+            return List.of(origin, base, base + "/");
+        } catch (Exception e) {
+            return List.of(base);
+        }
     }
 
     @Override
