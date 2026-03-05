@@ -41,8 +41,10 @@ public class MovieService {
     /**
      * Returns movie details for the given TMDB ID as an API response object.
      * Checks Redis first; on cache miss, fetches from TMDB and stores the result.
+     * Rejects invalid IDs (<= 0).
      */
     public Optional<MovieResponse> getById(long tmdbId) {
+        if (tmdbId <= 0) return Optional.empty();
         return getTmdbMovieById(tmdbId).map(MovieResponse::from);
     }
 
@@ -52,6 +54,7 @@ public class MovieService {
      * Shares the same Redis cache entry as getById().
      */
     public Optional<TmdbMovie> getTmdbMovieById(long tmdbId) {
+        if (tmdbId <= 0) return Optional.empty();
         var key = CACHE_PREFIX + tmdbId;
 
         var cached = redisTemplate.opsForValue().get(key);

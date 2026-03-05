@@ -3,6 +3,7 @@ package com.rekomenda.api.domain.room;
 import com.rekomenda.api.domain.room.dto.ChooseFilmRequest;
 import com.rekomenda.api.domain.room.dto.KickRequest;
 import com.rekomenda.api.domain.room.dto.SubmitPromptRequest;
+import jakarta.validation.Valid;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -42,7 +43,7 @@ public class RoomWebSocketController {
     public void kick(
             @DestinationVariable String roomId,
             java.security.Principal principal,
-            @Payload KickRequest request) {
+            @Valid @Payload KickRequest request) {
         roomService.kickParticipant(roomId, UUID.fromString(principal.getName()), request.targetUserId());
     }
 
@@ -50,7 +51,7 @@ public class RoomWebSocketController {
     public void submitPrompt(
             @DestinationVariable String roomId,
             java.security.Principal principal,
-            @Payload SubmitPromptRequest request) {
+            @Valid @Payload SubmitPromptRequest request) {
         roomService.submitPrompt(roomId, UUID.fromString(principal.getName()), request.descricao());
     }
 
@@ -67,7 +68,7 @@ public class RoomWebSocketController {
     @MessageMapping("/room.choose-film/{roomId}")
     public void chooseFilm(
             @DestinationVariable String roomId,
-            @Payload ChooseFilmRequest request) {
+            @Valid @Payload ChooseFilmRequest request) {
         roomService.chooseFilm(roomId, request.movieId());
     }
 

@@ -8,5 +8,5 @@ import java.util.UUID;
 
 public record ResetPasswordRequest(
         @NotNull UUID token,
-        @NotBlank @Size(min = 8) String novaSenha
+        @NotBlank @Size(min = 8, max = 72) String novaSenha
 ) {}

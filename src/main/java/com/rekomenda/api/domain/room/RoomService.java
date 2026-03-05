@@ -48,6 +48,8 @@ public class RoomService {
     private final String frontendUrl;
     private final long roomTtlMinutes;
     private final long recommendationTimeoutSeconds;
+    private final int maxParticipants;
+    private final int maxMoviesPerGeneration;
 
     public RoomService(
             RoomRepository roomRepository,
@@ -59,7 +61,9 @@ public class RoomService {
             UserRepository userRepository,
             @Value("${app.frontend-url}") String frontendUrl,
             @Value("${app.room.ttl-minutes}") long roomTtlMinutes,
-            @Value("${app.room.recommendation-timeout-seconds}") long recommendationTimeoutSeconds) {
+            @Value("${app.room.recommendation-timeout-seconds}") long recommendationTimeoutSeconds,
+            @Value("${app.room.max-participants:10}") int maxParticipants,
+            @Value("${app.room.max-movies-per-generation:50}") int maxMoviesPerGeneration) {
         this.roomRepository = roomRepository;
         this.ratingRepository = ratingRepository;
         this.movieService = movieService;
@@ -70,6 +74,8 @@ public class RoomService {
         this.frontendUrl = frontendUrl;
         this.roomTtlMinutes = roomTtlMinutes;
         this.recommendationTimeoutSeconds = recommendationTimeoutSeconds;
+        this.maxParticipants = maxParticipants;
+        this.maxMoviesPerGeneration = maxMoviesPerGeneration;
     }
 
     public RoomResponse createRoom(UUID hostId) {
@@ -89,6 +95,10 @@ public class RoomService {
     public void joinRoom(String roomId, UUID userId, String sessionId) {
         var room = findRoom(roomId);
         assertRoomActive(room);
+
+        if (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() >= maxParticipants) {
+            throw new BusinessException("Sala lotada. Máximo de " + maxParticipants + " participantes.", HttpStatus.BAD_REQUEST);
+        }
 
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
@@ -263,8 +273,9 @@ public class RoomService {
         var unmatchedKeywords = getUnmatchedKeywords(keywords, genreMap);
         log.info("Gêneros resolvidos: {}, keywords sem match: {}", matchedGenreIds, unmatchedKeywords);
 
-        int movieLimit = (int) (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2);
-        int perSource = Math.max(movieLimit, 6);
+        int participantCount = (int) room.getParticipants().stream().filter(p -> !p.isExpulso()).count();
+        int movieLimit = Math.clamp((long) participantCount * 2, 0, maxMoviesPerGeneration);
+        int perSource = Math.clamp(movieLimit, 6, maxMoviesPerGeneration);
 
         int seed = room.getId().hashCode() ^ (int) (System.currentTimeMillis() / 1000);
 
@@ -373,7 +384,19 @@ public class RoomService {
         messagingTemplate.convertAndSend("/topic/room/" + roomId, event);
     }
 
+    private void validateRoomId(String roomId) {
+        if (roomId == null || roomId.isBlank()) {
+            throw new BusinessException("ID da sala inválido", HttpStatus.BAD_REQUEST);
+        }
+        try {
+            UUID.fromString(roomId);
+        } catch (IllegalArgumentException _) {
+            throw new BusinessException("ID da sala inválido", HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private Room findRoom(String roomId) {
+        validateRoomId(roomId);
         return roomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException("Sala não encontrada", HttpStatus.NOT_FOUND));
     }

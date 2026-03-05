@@ -10,7 +10,9 @@ public record ChatRequest(
         @Size(max = 20) List<Long> excludedMovieIds
 ) {
     public ChatRequest {
-        excludedMovieIds = excludedMovieIds != null ? excludedMovieIds : List.of();
+        excludedMovieIds = excludedMovieIds != null
+                ? excludedMovieIds.stream().filter(id -> id != null && id > 0).toList()
+                : List.of();
     }
 
     public ChatRequest(String descricao) {

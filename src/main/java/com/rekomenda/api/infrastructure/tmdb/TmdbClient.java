@@ -39,11 +39,16 @@ public class TmdbClient {
             "popularity.desc", "vote_average.desc", "primary_release_date.desc", "vote_count.desc"
     };
 
+    private static final int MAX_DISCOVER_LIMIT = 100;
+    private static final int MAX_SEARCH_LIMIT = 50;
+
     /**
      * Fetches movies filtered by genre IDs from TMDB /discover/movie.
      * Uses varied pages (spread across 1-100) and sort options for higher variety.
+     * Limit is clamped to MAX_DISCOVER_LIMIT to prevent abuse.
      */
     public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int seed) {
+        int safeLimit = Math.clamp(limit, 1, MAX_DISCOVER_LIMIT);
         var genreParam = genreIds.stream()
                 .map(String::valueOf)
                 .reduce((a, b) -> a + "|" + b)
@@ -81,14 +86,18 @@ public class TmdbClient {
         }
 
         Collections.shuffle(all, new java.util.Random(seed));
-        return all.stream().limit(limit).toList();
+        return all.stream().limit(safeLimit).toList();
     }
 
     /**
      * Searches for movies by keyword. Fetches multiple pages and shuffles for variety.
-     * @param seed used to vary which pages are fetched and shuffle order
+     * Limit is clamped to MAX_SEARCH_LIMIT. Query length is limited to prevent abuse.
      */
     public List<TmdbMovie> searchByKeywords(String query, int limit, int seed) {
+        if (query == null || query.isBlank()) return List.of();
+        String trimmed = query.trim();
+        String safeQuery = trimmed.length() > 200 ? trimmed.substring(0, 200) : trimmed;
+        int safeLimit = Math.clamp(limit, 1, MAX_SEARCH_LIMIT);
         var rng = new java.util.Random(seed);
         int startPage = rng.nextInt(5) + 1;
         var all = new ArrayList<TmdbMovie>();
@@ -100,7 +109,7 @@ public class TmdbClient {
                             .path("/search/movie")
                             .queryParam(PARAM_API_KEY, apiKey)
                             .queryParam(PARAM_LANGUAGE, LANGUAGE)
-                            .queryParam("query", query)
+                            .queryParam("query", safeQuery)
                             .queryParam("page", page)
                             .build())
                     .retrieve()
@@ -112,7 +121,7 @@ public class TmdbClient {
         }
 
         Collections.shuffle(all, new java.util.Random(seed));
-        return all.stream().limit(limit).toList();
+        return all.stream().limit(safeLimit).toList();
     }
 
     /**
