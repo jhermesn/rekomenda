@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +37,7 @@ public class TmdbClient {
 
     /**
      * Fetches movies filtered by genre IDs from TMDB /discover/movie.
-     * Uses pageOffset to vary results per caller (e.g. derived from userId hash).
+     * Fetches multiple pages and shuffles with seed for per-caller variety.
      */
     public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int pageOffset) {
         var genreParam = genreIds.stream()
@@ -43,26 +45,35 @@ public class TmdbClient {
                 .reduce((a, b) -> a + "|" + b)
                 .orElse("");
 
-        int page = Math.max(1, (pageOffset % 10) + 1);
+        int basePage = Math.max(1, (Math.abs(pageOffset) % 20) + 1);
+        var all = new ArrayList<TmdbMovie>();
 
-        var response = restClient.get()
-                .uri(ub -> {
-                    var b = ub.path("/discover/movie")
-                            .queryParam(PARAM_API_KEY, apiKey)
-                            .queryParam(PARAM_LANGUAGE, LANGUAGE)
-                            .queryParam("sort_by", "popularity.desc")
-                            .queryParam("page", page);
-                    if (!genreParam.isBlank()) {
-                        b.queryParam("with_genres", genreParam);
-                    }
-                    return b.build();
-                })
-                .retrieve()
-                .body(TmdbPageResponse.class);
+        for (int i = 0; i < 3; i++) {
+            int page = basePage + i;
+            var response = restClient.get()
+                    .uri(ub -> {
+                        var b = ub.path("/discover/movie")
+                                .queryParam(PARAM_API_KEY, apiKey)
+                                .queryParam(PARAM_LANGUAGE, LANGUAGE)
+                                .queryParam("sort_by", "popularity.desc")
+                                .queryParam("page", page);
+                        if (!genreParam.isBlank()) {
+                            b.queryParam("with_genres", genreParam);
+                        }
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(TmdbPageResponse.class);
 
-        if (response == null || response.results() == null)
-            return List.of();
-        return response.results().stream().limit(limit).toList();
+            if (response != null && response.results() != null && !response.results().isEmpty()) {
+                all.addAll(response.results());
+            } else {
+                break;
+            }
+        }
+
+        Collections.shuffle(all, new java.util.Random(pageOffset));
+        return all.stream().limit(limit).toList();
     }
 
     /**
