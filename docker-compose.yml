@@ -24,7 +24,9 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     networks:
-      - rekomenda_internal
+      rekomenda_internal:
+        aliases:
+          - rekomenda-redis
     ports:
       - "6380:6379"
     healthcheck:
@@ -53,7 +55,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/rekomenda
       DB_USERNAME: rekomenda
       DB_PASSWORD: rekomenda
-      REDIS_HOST: redis
+      REDIS_HOST: rekomenda-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
