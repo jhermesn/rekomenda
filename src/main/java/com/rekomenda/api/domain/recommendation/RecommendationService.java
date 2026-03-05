@@ -3,6 +3,7 @@ package com.rekomenda.api.domain.recommendation;
 import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
 import com.rekomenda.api.domain.user.UserRepository;
 import com.rekomenda.api.infrastructure.tmdb.TmdbClient;
+import com.rekomenda.api.shared.util.AgeCertification;
 import com.rekomenda.api.shared.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -81,11 +82,14 @@ public class RecommendationService {
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
 
         var weights = user.getRecommendationWeights();
+        int age = AgeCertification.ageFrom(user.getDataNascimento());
+        String certCountry = AgeCertification.certificationCountry();
+        String certLte = AgeCertification.certificationLteForAge(age);
 
         int seed = userId.hashCode() ^ (int) (System.currentTimeMillis() / 3600000);
 
         if (weights.isEmpty()) {
-            return tmdbClient.discoverByGenres(List.of(), DASHBOARD_LIMIT, seed)
+            return tmdbClient.discoverByGenres(List.of(), DASHBOARD_LIMIT, seed, certCountry, certLte)
                     .stream().map(MovieResponse::from).toList();
         }
 
@@ -96,7 +100,7 @@ public class RecommendationService {
                 .map(e -> Long.parseLong(e.getKey()))
                 .toList();
 
-        return tmdbClient.discoverByGenres(topGenreIds, DASHBOARD_LIMIT, seed)
+        return tmdbClient.discoverByGenres(topGenreIds, DASHBOARD_LIMIT, seed, certCountry, certLte)
                 .stream().map(MovieResponse::from).toList();
     }
 }

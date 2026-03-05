@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie;
+import com.rekomenda.api.shared.util.AgeCertification;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -279,9 +280,20 @@ public class RoomService {
 
         int seed = room.getId().hashCode() ^ (int) (System.currentTimeMillis() / 1000);
 
+        var participantUserIds = room.getParticipants().stream()
+                .filter(p -> !p.isExpulso())
+                .map(RoomParticipant::getUserId)
+                .toList();
+        int minAge = userRepository.findAllById(participantUserIds).stream()
+                .map(u -> AgeCertification.ageFrom(u.getDataNascimento()))
+                .min(Integer::compareTo)
+                .orElse(18);
+        String certCountry = AgeCertification.certificationCountry();
+        String certLte = AgeCertification.certificationLteForAge(minAge);
+
         var allMovies = new ArrayList<TmdbMovie>();
         if (!matchedGenreIds.isEmpty()) {
-            allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, seed));
+            allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, seed, certCountry, certLte));
         }
         for (var kw : unmatchedKeywords) {
             allMovies.addAll(tmdbClient.searchByKeywords(kw, perSource, seed + kw.hashCode()));

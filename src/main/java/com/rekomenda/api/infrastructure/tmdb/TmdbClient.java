@@ -39,8 +39,9 @@ public class TmdbClient {
             "popularity.desc", "vote_average.desc", "primary_release_date.desc", "vote_count.desc"
     };
 
+    /** TMDB allows up to 500 pages × 20 items/page. We cap at 100 per request. */
     private static final int MAX_DISCOVER_LIMIT = 100;
-    private static final int MAX_SEARCH_LIMIT = 50;
+    private static final int MAX_SEARCH_LIMIT = 100;
 
     /**
      * Fetches movies filtered by genre IDs from TMDB /discover/movie.
@@ -48,6 +49,15 @@ public class TmdbClient {
      * Limit is clamped to MAX_DISCOVER_LIMIT to prevent abuse.
      */
     public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int seed) {
+        return discoverByGenres(genreIds, limit, seed, null, null);
+    }
+
+    /**
+     * Same as discoverByGenres but with optional age-based certification filter (BR).
+     * certificationCountry and certificationLte must both be non-null to apply.
+     */
+    public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int seed,
+            String certificationCountry, String certificationLte) {
         int safeLimit = Math.clamp(limit, 1, MAX_DISCOVER_LIMIT);
         var genreParam = genreIds.stream()
                 .map(String::valueOf)
@@ -60,6 +70,8 @@ public class TmdbClient {
         int[] pageBands = {1, 15, 30, 50, 75, 100};
         int basePage = pageBands[rng.nextInt(pageBands.length)];
         var all = new ArrayList<TmdbMovie>();
+        boolean useCertification = certificationCountry != null && !certificationCountry.isBlank()
+                && certificationLte != null && !certificationLte.isBlank();
 
         for (int i = 0; i < 4; i++) {
             int page = Math.min(basePage + i, 500);
@@ -72,6 +84,10 @@ public class TmdbClient {
                                 .queryParam("page", page);
                         if (!genreParam.isBlank()) {
                             b.queryParam("with_genres", genreParam);
+                        }
+                        if (useCertification) {
+                            b.queryParam("certification_country", certificationCountry);
+                            b.queryParam("certification.lte", certificationLte);
                         }
                         return b.build();
                     })
@@ -102,7 +118,7 @@ public class TmdbClient {
         int startPage = rng.nextInt(5) + 1;
         var all = new ArrayList<TmdbMovie>();
 
-        for (int p = 0; p < 3; p++) {
+        for (int p = 0; p < 5; p++) {
             int page = Math.min(startPage + p, 500);
             var response = restClient.get()
                     .uri(uriBuilder -> uriBuilder

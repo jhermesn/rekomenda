@@ -23,12 +23,17 @@ public class GeminiService {
             You are a movie recommendation assistant. The user described what they want to watch (may be in Portuguese or English):
             "%s"
             %s
+            %s
 
             Rules:
             - Suggest ONE well-known movie or series that closely matches the description.
             - For horror + underground/cave: think The Descent, As Above So Below, The Cave, etc. — NOT children's content.
             - For adult-oriented requests, NEVER suggest kids/family films (e.g. Monster High, animated children's movies).
             - Return ONLY the exact movie title in English, nothing else.
+            """;
+
+    private static final String AGE_RESTRICTION_CLAUSE = """
+            The user is %d years old. Only suggest movies appropriate for their age (Brazil rating: Livre for 0-9, 10 for 10-11, 12 for 12-13, 14 for 14-15, 16 for 16-17, 18 for 18+).
             """;
 
     private final ChatClient chatClient;
@@ -42,15 +47,15 @@ public class GeminiService {
      * extract relevant genre keywords for a TMDB discovery search.
      */
     public List<String> extractKeywords(String combinedPrompt) {
-        var response = chatClient.prompt()
+        var keywordsResponse = chatClient.prompt()
                 .user(KEYWORD_EXTRACTION_PROMPT.formatted(combinedPrompt))
                 .call()
                 .content();
 
-        if (response == null || response.isBlank())
+        if (keywordsResponse == null || keywordsResponse.isBlank())
             return List.of();
 
-        return List.of(response.split(",")).stream()
+        return List.of(keywordsResponse.split(",")).stream()
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
                 .toList();
@@ -59,18 +64,20 @@ public class GeminiService {
     /**
      * Handles an individual user's free-text movie request and returns a single suggested title.
      * If excludedTitles is non-empty, the LLM is instructed to avoid suggesting those movies.
+     * If userAge is present (non-null), the LLM is instructed to suggest only age-appropriate movies.
      */
-    public String recommendForIndividual(String userDescription, List<String> excludedTitles) {
+    public String recommendForIndividual(String userDescription, List<String> excludedTitles, Integer userAge) {
         var excludeClause = excludedTitles != null && !excludedTitles.isEmpty()
                 ? "The user has ALREADY SEEN these movies (do NOT suggest any of these): " + String.join(", ", excludedTitles)
                 : "";
-        var prompt = INDIVIDUAL_RECOMMENDATION_PROMPT.formatted(userDescription, excludeClause);
+        var ageClause = userAge != null ? AGE_RESTRICTION_CLAUSE.formatted(userAge) : "";
+        var userPrompt = INDIVIDUAL_RECOMMENDATION_PROMPT.formatted(userDescription, excludeClause, ageClause);
 
-        var response = chatClient.prompt()
-                .user(prompt)
+        String suggestedTitle = chatClient.prompt()
+                .user(userPrompt)
                 .call()
                 .content();
 
-        return response != null ? response.trim() : "";
+        return suggestedTitle != null ? suggestedTitle.trim() : "";
     }
 }
