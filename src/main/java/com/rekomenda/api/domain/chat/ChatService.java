@@ -29,9 +29,8 @@ public class ChatService {
         String suggestedTitle;
         try {
             suggestedTitle = geminiService.recommendForIndividual(request.descricao());
-        } catch (Exception ignored) {
-            throw new BusinessException("Serviço de recomendação indisponível no momento",
-                    HttpStatus.SERVICE_UNAVAILABLE);
+        } catch (RuntimeException _) {
+            throw new BusinessException("Serviço de recomendação indisponível no momento", HttpStatus.SERVICE_UNAVAILABLE);
         }
 
         if (suggestedTitle.isBlank()) {
@@ -44,6 +43,6 @@ public class ChatService {
             throw new BusinessException("Filme sugerido não encontrado na base de dados", HttpStatus.NOT_FOUND);
         }
 
-        return new ChatResponse(MovieResponse.from(results.get(0)));
+        return new ChatResponse(MovieResponse.from(results.getFirst()));
     }
 }

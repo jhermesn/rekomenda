@@ -73,7 +73,7 @@ public class AuthService {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.email(), request.senha()));
-        } catch (AuthenticationException ignored) {
+        } catch (AuthenticationException _) {
             throw new BusinessException("E-mail ou senha incorretos", HttpStatus.UNAUTHORIZED);
         }
 
@@ -89,8 +89,7 @@ public class AuthService {
         var user = userRepository.findByEmail(request.email()).orElse(null);
 
         // Always return success to avoid user enumeration
-        if (user == null)
-            return;
+        if (user == null) return;
 
         resetTokenRepository.deleteAllByUserId(user.getId());
 

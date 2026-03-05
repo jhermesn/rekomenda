@@ -45,7 +45,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token has been revoked");
                 return;
             }
-        } catch (JwtException ignored) {
+        } catch (JwtException _) {
             // Invalid tokens are handled by the downstream resource server filter
         }
 
