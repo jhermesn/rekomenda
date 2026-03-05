@@ -1,6 +1,5 @@
 package com.rekomenda.api.domain.room;
 
-import com.rekomenda.api.domain.movie.MovieService;
 import com.rekomenda.api.domain.rating.Rating;
 import com.rekomenda.api.domain.rating.RatingRepository;
 import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
@@ -8,6 +7,7 @@ import com.rekomenda.api.domain.room.dto.RoomEvent;
 import com.rekomenda.api.domain.room.dto.RoomResponse;
 import com.rekomenda.api.domain.user.UserRepository;
 import com.rekomenda.api.infrastructure.ai.GeminiService;
+import com.rekomenda.api.infrastructure.ai.GeminiService.MovieCandidate;
 import com.rekomenda.api.infrastructure.tmdb.TmdbClient;
 import com.rekomenda.api.shared.exception.BusinessException;
 import com.rekomenda.api.shared.exception.RecommendationGenerationException;
@@ -17,7 +17,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,7 +40,6 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RatingRepository ratingRepository;
-    private final MovieService movieService;
     private final GeminiService geminiService;
     private final TmdbClient tmdbClient;
     private final SimpMessagingTemplate messagingTemplate;
@@ -55,7 +53,6 @@ public class RoomService {
     public RoomService(
             RoomRepository roomRepository,
             RatingRepository ratingRepository,
-            MovieService movieService,
             GeminiService geminiService,
             TmdbClient tmdbClient,
             SimpMessagingTemplate messagingTemplate,
@@ -67,7 +64,6 @@ public class RoomService {
             @Value("${app.room.max-movies-per-generation:50}") int maxMoviesPerGeneration) {
         this.roomRepository = roomRepository;
         this.ratingRepository = ratingRepository;
-        this.movieService = movieService;
         this.geminiService = geminiService;
         this.tmdbClient = tmdbClient;
         this.messagingTemplate = messagingTemplate;
@@ -234,10 +230,10 @@ public class RoomService {
 
         try {
             log.info("Iniciando geração de recomendações para a sala {}", room.getId());
-            var combinedPrompt = buildCollectivePrompt(room);
-            log.info("Prompt montado para Gemini: {}", combinedPrompt);
+            var desiresOnly = buildDesiresForKeywordExtraction(room);
+            log.info("Desejos para extração de keywords: {}", desiresOnly);
 
-            var movies = CompletableFuture.supplyAsync(() -> fetchAndFilterMovies(room, combinedPrompt))
+            var movies = CompletableFuture.supplyAsync(() -> fetchAndFilterMovies(room, desiresOnly))
                     .get(recommendationTimeoutSeconds, TimeUnit.SECONDS);
 
             room.setFilmesRecomendados(List.copyOf(movies));
@@ -263,8 +259,8 @@ public class RoomService {
         }
     }
 
-    private List<MovieResponse> fetchAndFilterMovies(Room room, String combinedPrompt) {
-        var keywords = geminiService.extractKeywords(combinedPrompt);
+    private List<MovieResponse> fetchAndFilterMovies(Room room, String desiresForKeywords) {
+        var keywords = geminiService.extractKeywords(desiresForKeywords);
         log.info("Keywords extraídas pelo Gemini: {}", keywords);
 
         var genreMap = tmdbClient.fetchGenreMapForMatching();
@@ -301,13 +297,26 @@ public class RoomService {
 
         var excludedIds = collectExcludedMovieIds(room);
 
-        return allMovies.stream()
+        var filteredMovies = allMovies.stream()
                 .filter(m -> m.overview() != null && !m.overview().isBlank())
                 .filter(m -> !excludedIds.contains(m.id()))
                 .collect(Collectors.toMap(TmdbMovie::id, m -> m, (a, b) -> a))
                 .values().stream()
-                .sorted(Comparator.comparingDouble(TmdbMovie::voteAverage).reversed())
+                .toList();
+
+        if (filteredMovies.isEmpty()) return List.of();
+
+        var candidates = filteredMovies.stream()
+                .map(m -> new MovieCandidate(m.id(), m.title(), m.overview()))
+                .toList();
+        var orderedIds = geminiService.selectMovieIdsByRelevance(desiresForKeywords, candidates);
+        log.info("Ordem definida pela IA: {}", orderedIds.stream().limit(10).toList());
+        var byId = filteredMovies.stream().collect(Collectors.toMap(TmdbMovie::id, m -> m, (a, b) -> a));
+
+        return orderedIds.stream()
                 .limit(movieLimit)
+                .map(byId::get)
+                .filter(m -> m != null)
                 .map(MovieResponse::from)
                 .toList();
     }
@@ -362,27 +371,16 @@ public class RoomService {
     }
 
     /**
-     * Concatenates each active participant's rating history (with movie titles)
-     * and their prompt to create context for the LLM. Titles help the LLM
-     * avoid suggesting movies participants have already seen.
+     * Builds a string of current desires only, for keyword extraction.
+     * History is NOT included — it would bias genre extraction (e.g. horror in history
+     * causing horror recommendations when user asked for comedy). Exclusion is done by ID.
      */
-    private String buildCollectivePrompt(Room room) {
+    private String buildDesiresForKeywordExtraction(Room room) {
         return room.getParticipants().stream()
                 .filter(p -> !p.isExpulso())
                 .map(p -> {
-                    var ratings = ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(p.getUserId());
-                    var ratingSummary = ratings.stream()
-                            .limit(10)
-                            .map(r -> {
-                                var title = movieService.getTmdbMovieById(r.getConteudoId())
-                                        .map(m -> m.title())
-                                        .orElse("ID " + r.getConteudoId());
-                                return r.getTipo().name() + ": " + title;
-                            })
-                            .collect(Collectors.joining(", "));
-
-                    return "Participant: already seen/rated=[%s], current desire=[%s]"
-                            .formatted(ratingSummary, p.getDescricaoDesejo());
+                    var desire = p.getDescricaoDesejo();
+                    return desire != null && !desire.isBlank() ? desire : "(no preference)";
                 })
                 .collect(Collectors.joining("\n"));
     }

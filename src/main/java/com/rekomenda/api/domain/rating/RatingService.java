@@ -6,6 +6,7 @@ import com.rekomenda.api.domain.rating.dto.RatingResponse;
 import com.rekomenda.api.domain.user.User;
 import com.rekomenda.api.domain.user.UserRepository;
 import com.rekomenda.api.shared.exception.BusinessException;
+import com.rekomenda.api.domain.chat.ChatService;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -60,8 +61,8 @@ public class RatingService {
         ratingRepository.save(rating);
         updateRecommendationWeights(user, request.conteudoId(), request.tipo());
 
-        // Invalidate the dashboard cache so next load reflects the new weights
         redisTemplate.delete(DASHBOARD_CACHE_PREFIX + userId);
+        redisTemplate.delete(ChatService.EXCLUDED_CACHE_PREFIX + userId);
 
         return RatingResponse.from(rating);
     }
