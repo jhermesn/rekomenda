@@ -8,16 +8,26 @@ import com.rekomenda.api.domain.user.UserRepository;
 import com.rekomenda.api.infrastructure.ai.GeminiService;
 import com.rekomenda.api.infrastructure.tmdb.TmdbClient;
 import com.rekomenda.api.shared.exception.BusinessException;
+import com.rekomenda.api.shared.exception.RecommendationGenerationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
+
+import com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie;
+
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -152,7 +162,7 @@ public class RoomService {
         assertIsHost(room, hostId);
 
         room.setFilmeEscolhido(null);
-        room.setFilmesRecomendados(new java.util.ArrayList<>());
+        room.setFilmesRecomendados(new ArrayList<>());
         room.setStatus(RoomStatus.AGUARDANDO);
 
         room.getParticipants().stream()
@@ -214,8 +224,8 @@ public class RoomService {
 
                 var matchedGenreIds = keywords.stream()
                         .map(String::toLowerCase)
-                        .map(k -> genreMap.getOrDefault(k, null))
-                        .filter(java.util.Objects::nonNull)
+                        .map(genreMap::get)
+                        .filter(Objects::nonNull)
                         .distinct()
                         .toList();
 
@@ -228,7 +238,7 @@ public class RoomService {
                 int movieLimit = (int) (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2);
                 int perSource = Math.max(movieLimit, 6);
 
-                var allMovies = new java.util.ArrayList<com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie>();
+                var allMovies = new ArrayList<TmdbMovie>();
 
                 if (!matchedGenreIds.isEmpty()) {
                     allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource));
@@ -239,13 +249,9 @@ public class RoomService {
                 }
                 return allMovies.stream()
                         .filter(m -> m.overview() != null && !m.overview().isBlank())
-                        .collect(java.util.stream.Collectors.toMap(
-                                com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie::id,
-                                m -> m,
-                                (a, b) -> a))
+                        .collect(Collectors.toMap(TmdbMovie::id, m -> m, (a, b) -> a))
                         .values().stream()
-                        .sorted(java.util.Comparator.comparingDouble(
-                                com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie::voteAverage).reversed())
+                        .sorted(Comparator.comparingDouble(TmdbMovie::voteAverage).reversed())
                         .limit(movieLimit)
                         .map(MovieResponse::from)
                         .toList();
@@ -257,17 +263,30 @@ public class RoomService {
 
             log.info("Recomendações geradas com sucesso. {} filmes encontrados.", movies.size());
             broadcast(room.getId(), RoomEvent.of(RoomEvent.EventType.RECOMMENDATIONS_READY, movies));
-        } catch (Exception ex) {
-            log.error("Erro ao gerar recomendações coletivas para a sala {}", room.getId(), ex);
-            room.setFilmesRecomendados(previousMovies);
-            room.setStatus(previousStatus);
-            roomRepository.save(room);
-
-            broadcast(room.getId(), RoomEvent.of(
-                    RoomEvent.EventType.RECOMMENDATIONS_FAILED,
-                    "Não foi possível gerar recomendações coletivas. Tente novamente em alguns instantes."));
-            throw new RuntimeException(ex);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Geração de recomendações interrompida para a sala {}", room.getId(), e);
+            rollbackAndBroadcastFailure(room, previousMovies, previousStatus);
+            throw new RecommendationGenerationException("Geração de recomendações interrompida", e);
+        } catch (ExecutionException e) {
+            var cause = e.getCause();
+            log.error("Erro ao gerar recomendações coletivas para a sala {}", room.getId(), cause);
+            rollbackAndBroadcastFailure(room, previousMovies, previousStatus);
+            throw cause instanceof RuntimeException r ? r : new RecommendationGenerationException("Falha ao gerar recomendações", cause);
+        } catch (TimeoutException e) {
+            log.error("Timeout ao gerar recomendações para a sala {}", room.getId(), e);
+            rollbackAndBroadcastFailure(room, previousMovies, previousStatus);
+            throw new RecommendationGenerationException("Timeout ao gerar recomendações", e);
         }
+    }
+
+    private void rollbackAndBroadcastFailure(Room room, List<MovieResponse> previousMovies, RoomStatus previousStatus) {
+        room.setFilmesRecomendados(previousMovies);
+        room.setStatus(previousStatus);
+        roomRepository.save(room);
+        broadcast(room.getId(), RoomEvent.of(
+                RoomEvent.EventType.RECOMMENDATIONS_FAILED,
+                "Não foi possível gerar recomendações coletivas. Tente novamente em alguns instantes."));
     }
 
     /**

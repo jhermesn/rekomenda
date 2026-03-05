@@ -2,6 +2,8 @@ package com.rekomenda.api.domain.room;
 
 import lombok.*;
 
+import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,8 +26,8 @@ public class Room {
     private RoomStatus status;
     private Instant createdAt;
     private List<RoomParticipant> participants;
-    private List<com.rekomenda.api.domain.recommendation.dto.MovieResponse> filmesRecomendados;
-    private com.rekomenda.api.domain.recommendation.dto.MovieResponse filmeEscolhido;
+    private List<MovieResponse> filmesRecomendados;
+    private MovieResponse filmeEscolhido;
 
     public static Room create(UUID hostId) {
         return Room.builder()
