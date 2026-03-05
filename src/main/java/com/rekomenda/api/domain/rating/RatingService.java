@@ -1,11 +1,12 @@
 package com.rekomenda.api.domain.rating;
 
+import com.rekomenda.api.domain.movie.MovieService;
 import com.rekomenda.api.domain.rating.dto.CreateRatingRequest;
 import com.rekomenda.api.domain.rating.dto.RatingResponse;
 import com.rekomenda.api.domain.user.User;
 import com.rekomenda.api.domain.user.UserRepository;
-import com.rekomenda.api.infrastructure.tmdb.TmdbClient;
 import com.rekomenda.api.shared.exception.BusinessException;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,29 +14,29 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 @Service
 public class RatingService {
 
-    /**
-     * Dampens the weight update for each subsequent interaction to prevent any single
-     * rating from dominating the preference profile.
-     */
     private static final double DECAY_FACTOR = 0.9;
+
+    /** Must match the key prefix used by RecommendationService */
+    private static final String DASHBOARD_CACHE_PREFIX = "rec:dashboard:";
 
     private final RatingRepository ratingRepository;
     private final UserRepository userRepository;
-    private final TmdbClient tmdbClient;
+    private final MovieService movieService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     public RatingService(
             RatingRepository ratingRepository,
             UserRepository userRepository,
-            TmdbClient tmdbClient
-    ) {
+            MovieService movieService,
+            RedisTemplate<String, Object> redisTemplate) {
         this.ratingRepository = ratingRepository;
         this.userRepository = userRepository;
-        this.tmdbClient = tmdbClient;
+        this.movieService = movieService;
+        this.redisTemplate = redisTemplate;
     }
 
     @Transactional
@@ -59,6 +60,9 @@ public class RatingService {
         ratingRepository.save(rating);
         updateRecommendationWeights(user, request.conteudoId(), request.tipo());
 
+        // Invalidate the dashboard cache so next load reflects the new weights
+        redisTemplate.delete(DASHBOARD_CACHE_PREFIX + userId);
+
         return RatingResponse.from(rating);
     }
 
@@ -72,23 +76,20 @@ public class RatingService {
     }
 
     /**
-     * Fetches the movie's genre IDs from TMDB and applies the rating delta to the user's
-     * genre weight map, then normalises the map to keep values in a stable range.
+     * Fetches the movie's genre IDs via MovieService (Redis-cached) and applies
+     * the rating delta to the user's genre weight map, then normalises the map.
      */
     private void updateRecommendationWeights(User user, Long conteudoId, RatingType tipo) {
-        var details = tmdbClient.getMovieDetails(conteudoId);
-        if (details == null) return;
-
-        @SuppressWarnings("unchecked")
-        var genres = (List<Map<String, Object>>) details.get("genres");
-        if (genres == null || genres.isEmpty()) return;
+        var movie = movieService.getTmdbMovieById(conteudoId);
+        if (movie == null || movie.genreIds() == null || movie.genreIds().isEmpty())
+            return;
 
         var weights = new HashMap<>(user.getRecommendationWeights());
         var delta = tipo.getDelta() * DECAY_FACTOR;
 
-        for (var genre : genres) {
-            var genreId = String.valueOf(genre.get("id"));
-            weights.compute(genreId, (k, existing) -> (existing == null ? 0.0 : existing) + delta);
+        for (var genreId : movie.genreIds()) {
+            var key = String.valueOf(genreId);
+            weights.compute(key, (k, existing) -> (existing == null ? 0.0 : existing) + delta);
         }
 
         normalise(weights);
@@ -96,13 +97,12 @@ public class RatingService {
         userRepository.save(user);
     }
 
-    /**
-     * Scales all weights so the maximum absolute value is 100, preserving relative proportions.
-     */
     private void normalise(Map<String, Double> weights) {
-        if (weights.isEmpty()) return;
-        var max = weights.values().stream().filter(Objects::nonNull).mapToDouble(v -> v).map(Math::abs).max().orElse(1.0);
-        if (max == 0) return;
+        if (weights.isEmpty())
+            return;
+        var max = weights.values().stream().mapToDouble(v -> v == null ? 0.0 : Math.abs(v)).max().orElse(1.0);
+        if (max == 0)
+            return;
         weights.replaceAll((k, v) -> (v / max) * 100.0);
     }
 

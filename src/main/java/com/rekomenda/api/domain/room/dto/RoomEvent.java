@@ -16,7 +16,8 @@ public record RoomEvent(EventType type, Object payload) {
         RECOMMENDATIONS_FAILED,
         FILM_CHOSEN,
         ROOM_CLOSED,
-        HOST_DISCONNECTED
+        HOST_DISCONNECTED,
+        ROOM_RESET
     }
 
     public static RoomEvent of(EventType type, Object payload) {

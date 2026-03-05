@@ -39,8 +39,7 @@ public class AuthService {
             AuthenticationManager authenticationManager,
             JwtService jwtService,
             MailService mailService,
-            @Value("${app.frontend-url}") String frontendUrl
-    ) {
+            @Value("${app.frontend-url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.resetTokenRepository = resetTokenRepository;
         this.passwordEncoder = passwordEncoder;
@@ -73,9 +72,8 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.email(), request.senha())
-            );
-        } catch (AuthenticationException _) {
+                    new UsernamePasswordAuthenticationToken(request.email(), request.senha()));
+        } catch (AuthenticationException ignored) {
             throw new BusinessException("E-mail ou senha incorretos", HttpStatus.UNAUTHORIZED);
         }
 
@@ -91,7 +89,8 @@ public class AuthService {
         var user = userRepository.findByEmail(request.email()).orElse(null);
 
         // Always return success to avoid user enumeration
-        if (user == null) return;
+        if (user == null)
+            return;
 
         resetTokenRepository.deleteAllByUserId(user.getId());
 

@@ -16,13 +16,17 @@ public class RoomParticipant {
     private ParticipantStatus status;
     private String descricaoDesejo;
     private boolean expulso;
+    private String nome;
+    private String username;
 
-    public static RoomParticipant join(UUID userId, String sessionId) {
+    public static RoomParticipant join(UUID userId, String sessionId, String nome, String username) {
         return RoomParticipant.builder()
                 .userId(userId)
                 .sessionId(sessionId)
                 .status(ParticipantStatus.PENDENTE)
                 .expulso(false)
+                .nome(nome)
+                .username(username)
                 .build();
     }
 }

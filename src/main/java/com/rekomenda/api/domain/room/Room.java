@@ -24,7 +24,8 @@ public class Room {
     private RoomStatus status;
     private Instant createdAt;
     private List<RoomParticipant> participants;
-    private List<Object> filmesRecomendados;
+    private List<com.rekomenda.api.domain.recommendation.dto.MovieResponse> filmesRecomendados;
+    private com.rekomenda.api.domain.recommendation.dto.MovieResponse filmeEscolhido;
 
     public static Room create(UUID hostId) {
         return Room.builder()
@@ -34,6 +35,7 @@ public class Room {
                 .createdAt(Instant.now())
                 .participants(new ArrayList<>())
                 .filmesRecomendados(new ArrayList<>())
+                .filmeEscolhido(null)
                 .build();
     }
 
