@@ -3,6 +3,8 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    networks:
+      - rekomenda_internal
     environment:
       POSTGRES_DB: rekomenda
       POSTGRES_USER: rekomenda
@@ -21,6 +23,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    networks:
+      - rekomenda_internal
     ports:
       - "6380:6379"
     healthcheck:
@@ -31,9 +35,13 @@ services:
 
   app:
     build: .
+    container_name: rekomenda-api
     restart: unless-stopped
     ports:
       - "8081:8080"
+    networks:
+      - rekomenda_internal
+      - homelab
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,6 +59,15 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
     volumes:
       - ./gcp-credentials.json:/app/gcp-credentials.json:ro
+    labels:
+      logging: "promtail"
+      service: "rekomenda-api"
+
+networks:
+  rekomenda_internal:
+    driver: bridge
+  homelab:
+    external: true
 
 volumes:
   postgres_data:
