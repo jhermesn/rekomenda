@@ -9,7 +9,6 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import java.net.URI;
 import java.util.List;
 
 @Configuration
@@ -18,8 +17,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtChannelInterceptor jwtChannelInterceptor;
 
-    @Value("${app.frontend-url}")
-    private String frontendUrl;
+    @Value("${app.cors-allowed-origin}")
+    private String allowedOrigin;
 
     public WebSocketConfig(JwtChannelInterceptor jwtChannelInterceptor) {
         this.jwtChannelInterceptor = jwtChannelInterceptor;
@@ -33,22 +32,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        var origins = buildAllowedOrigins(frontendUrl);
+        var origins = allowedOrigin != null && !allowedOrigin.isBlank()
+                ? List.of(allowedOrigin.trim())
+                : List.of("*");
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(origins.toArray(new String[0]))
                 .withSockJS();
-    }
-
-    private static List<String> buildAllowedOrigins(String frontendUrl) {
-        var base = frontendUrl != null ? frontendUrl.trim().replaceAll("/+$", "") : "";
-        if (base.isEmpty()) return List.of("*");
-        try {
-            var uri = URI.create(base);
-            var origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
-            return List.of(origin, base, base + "/");
-        } catch (Exception _) {
-            return List.of(base);
-        }
     }
 
     @Override
