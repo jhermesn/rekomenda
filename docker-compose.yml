@@ -7,8 +7,8 @@ services:
       - rekomenda_internal
     environment:
       POSTGRES_DB: rekomenda
-      POSTGRES_USER: rekomenda
-      POSTGRES_PASSWORD: rekomenda
+      POSTGRES_USER: ${DB_USERNAME:-rekomenda}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rekomenda}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -52,12 +52,13 @@ services:
     env_file:
       - .env
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       DB_URL: jdbc:postgresql://postgres:5432/rekomenda
-      DB_USERNAME: rekomenda
-      DB_PASSWORD: rekomenda
+      DB_USERNAME: ${DB_USERNAME:-rekomenda}
+      DB_PASSWORD: ${DB_PASSWORD:-rekomenda}
       REDIS_HOST: rekomenda-redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ""
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
     volumes:
       - ./gcp-credentials.json:/app/gcp-credentials.json:ro
