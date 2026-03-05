@@ -112,16 +112,19 @@ public class TmdbClient {
 
     /**
      * Fetches the list of official TMDB genres and returns a map from
-     * lowercase genre name -> genre id. Used to resolve Gemini keyword output
-     * to proper genre IDs for /discover/movie queries.
+     * lowercase genre name -> genre id. Uses English so Gemini's English keywords match.
      */
+    public Map<String, Long> fetchGenreMapForMatching() {
+        return fetchGenreMapWithLanguage("en");
+    }
+
     @SuppressWarnings("unchecked")
-    public Map<String, Long> fetchGenreMap() {
+    private Map<String, Long> fetchGenreMapWithLanguage(String language) {
         var response = restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/genre/movie/list")
                         .queryParam(PARAM_API_KEY, apiKey)
-                        .queryParam(PARAM_LANGUAGE, LANGUAGE)
+                        .queryParam(PARAM_LANGUAGE, language)
                         .build())
                 .retrieve()
                 .body(LinkedHashMap.class);

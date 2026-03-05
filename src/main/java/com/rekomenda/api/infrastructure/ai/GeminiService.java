@@ -9,21 +9,26 @@ import java.util.List;
 public class GeminiService {
 
     private static final String KEYWORD_EXTRACTION_PROMPT = """
-            You are a movie recommendation assistant. Based on the following user preferences and descriptions,
-            extract a list of relevant movie genre keywords in English suitable for a TMDB API search.
-            Participants have "already seen/rated" lists — prefer keywords that suggest NEW movies they haven't seen.
-            Return ONLY a comma-separated list of keywords, nothing else.
+            You are a movie recommendation assistant. Extract genre keywords for TMDB API search.
+            TMDB genres (use ONLY these exact names when applicable): Action, Adventure, Animation, Comedy, Crime, Documentary, Drama, Family, Fantasy, History, Horror, Music, Mystery, Romance, Science Fiction, Thriller, War, Western.
+            For compound requests (e.g. "horror underground"), include the base genre (Horror) plus 1-2 specific search terms (e.g. underground, subterranean, cave).
+            Participants have "already seen/rated" lists — prefer keywords that suggest NEW movies.
+            Return ONLY a comma-separated list: first genre names from the list above, then optional specific terms. Nothing else.
 
             User data:
             %s
             """;
 
     private static final String INDIVIDUAL_RECOMMENDATION_PROMPT = """
-            You are a helpful movie recommendation assistant. The user described what they want to watch:
+            You are a movie recommendation assistant. The user described what they want to watch (may be in Portuguese or English):
             "%s"
             %s
 
-            Suggest ONE movie or series that best matches and that the user has NOT already seen. Return ONLY the movie title in English, nothing else.
+            Rules:
+            - Suggest ONE well-known movie or series that closely matches the description.
+            - For horror + underground/cave: think The Descent, As Above So Below, The Cave, etc. — NOT children's content.
+            - For adult-oriented requests, NEVER suggest kids/family films (e.g. Monster High, animated children's movies).
+            - Return ONLY the exact movie title in English, nothing else.
             """;
 
     private final ChatClient chatClient;

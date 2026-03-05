@@ -1,6 +1,7 @@
 package com.rekomenda.api.domain.room;
 
 import com.rekomenda.api.domain.movie.MovieService;
+import com.rekomenda.api.domain.rating.Rating;
 import com.rekomenda.api.domain.rating.RatingRepository;
 import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
 import com.rekomenda.api.domain.room.dto.RoomEvent;
@@ -18,14 +19,16 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie;
 
@@ -44,6 +47,7 @@ public class RoomService {
     private final UserRepository userRepository;
     private final String frontendUrl;
     private final long roomTtlMinutes;
+    private final long recommendationTimeoutSeconds;
 
     public RoomService(
             RoomRepository roomRepository,
@@ -54,7 +58,8 @@ public class RoomService {
             SimpMessagingTemplate messagingTemplate,
             UserRepository userRepository,
             @Value("${app.frontend-url}") String frontendUrl,
-            @Value("${app.room.ttl-minutes}") long roomTtlMinutes) {
+            @Value("${app.room.ttl-minutes}") long roomTtlMinutes,
+            @Value("${app.room.recommendation-timeout-seconds}") long recommendationTimeoutSeconds) {
         this.roomRepository = roomRepository;
         this.ratingRepository = ratingRepository;
         this.movieService = movieService;
@@ -64,6 +69,7 @@ public class RoomService {
         this.userRepository = userRepository;
         this.frontendUrl = frontendUrl;
         this.roomTtlMinutes = roomTtlMinutes;
+        this.recommendationTimeoutSeconds = recommendationTimeoutSeconds;
     }
 
     public RoomResponse createRoom(UUID hostId) {
@@ -219,55 +225,9 @@ public class RoomService {
             log.info("Iniciando geração de recomendações para a sala {}", room.getId());
             var combinedPrompt = buildCollectivePrompt(room);
             log.info("Prompt montado para Gemini: {}", combinedPrompt);
-            var movies = CompletableFuture.supplyAsync(() -> {
-                var keywords = geminiService.extractKeywords(combinedPrompt);
-                log.info("Keywords extraídas pelo Gemini: {}", keywords);
 
-                var genreMap = tmdbClient.fetchGenreMap();
-                log.info("Mapa de gêneros TMDB: {} entradas", genreMap.size());
-
-                var matchedGenreIds = keywords.stream()
-                        .map(String::toLowerCase)
-                        .map(genreMap::get)
-                        .filter(Objects::nonNull)
-                        .distinct()
-                        .toList();
-
-                var unmatchedKeywords = keywords.stream()
-                        .filter(k -> !genreMap.containsKey(k.toLowerCase()))
-                        .toList();
-
-                log.info("Gêneros resolvidos: {}, keywords sem match: {}", matchedGenreIds, unmatchedKeywords);
-
-                int movieLimit = (int) (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2);
-                int perSource = Math.max(movieLimit, 6);
-
-                var allMovies = new ArrayList<TmdbMovie>();
-
-                if (!matchedGenreIds.isEmpty()) {
-                    allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, room.getId().hashCode()));
-                }
-
-                for (var keyword : unmatchedKeywords) {
-                    allMovies.addAll(tmdbClient.searchByKeywords(keyword, perSource));
-                }
-
-                var excludedIds = room.getParticipants().stream()
-                        .filter(p -> !p.isExpulso())
-                        .flatMap(p -> ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(p.getUserId()).stream())
-                        .map(r -> r.getConteudoId())
-                        .collect(Collectors.toSet());
-
-                return allMovies.stream()
-                        .filter(m -> m.overview() != null && !m.overview().isBlank())
-                        .filter(m -> !excludedIds.contains(m.id()))
-                        .collect(Collectors.toMap(TmdbMovie::id, m -> m, (a, b) -> a))
-                        .values().stream()
-                        .sorted(Comparator.comparingDouble(TmdbMovie::voteAverage).reversed())
-                        .limit(movieLimit)
-                        .map(MovieResponse::from)
-                        .toList();
-            }).get(30, TimeUnit.SECONDS);
+            var movies = CompletableFuture.supplyAsync(() -> fetchAndFilterMovies(room, combinedPrompt))
+                    .get(recommendationTimeoutSeconds, TimeUnit.SECONDS);
 
             room.setFilmesRecomendados(List.copyOf(movies));
             room.setStatus(RoomStatus.AGUARDANDO);
@@ -290,6 +250,79 @@ public class RoomService {
             rollbackAndBroadcastFailure(room, previousMovies, previousStatus);
             throw new RecommendationGenerationException("Timeout ao gerar recomendações", e);
         }
+    }
+
+    private List<MovieResponse> fetchAndFilterMovies(Room room, String combinedPrompt) {
+        var keywords = geminiService.extractKeywords(combinedPrompt);
+        log.info("Keywords extraídas pelo Gemini: {}", keywords);
+
+        var genreMap = tmdbClient.fetchGenreMapForMatching();
+        log.info("Mapa de gêneros TMDB: {} entradas", genreMap.size());
+
+        var matchedGenreIds = resolveGenreIds(keywords, genreMap);
+        var unmatchedKeywords = getUnmatchedKeywords(keywords, genreMap);
+        log.info("Gêneros resolvidos: {}, keywords sem match: {}", matchedGenreIds, unmatchedKeywords);
+
+        int movieLimit = (int) (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2);
+        int perSource = Math.max(movieLimit, 6);
+
+        var allMovies = new ArrayList<TmdbMovie>();
+        if (!matchedGenreIds.isEmpty()) {
+            allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, room.getId().hashCode()));
+        }
+        unmatchedKeywords.forEach(kw -> allMovies.addAll(tmdbClient.searchByKeywords(kw, perSource)));
+
+        var excludedIds = collectExcludedMovieIds(room);
+
+        return allMovies.stream()
+                .filter(m -> m.overview() != null && !m.overview().isBlank())
+                .filter(m -> !excludedIds.contains(m.id()))
+                .collect(Collectors.toMap(TmdbMovie::id, m -> m, (a, b) -> a))
+                .values().stream()
+                .sorted(Comparator.comparingDouble(TmdbMovie::voteAverage).reversed())
+                .limit(movieLimit)
+                .map(MovieResponse::from)
+                .toList();
+    }
+
+    private List<Long> resolveGenreIds(List<String> keywords, Map<String, Long> genreMap) {
+        return keywords.stream()
+                .map(String::toLowerCase)
+                .flatMap(k -> resolveGenreIdForKeyword(k, genreMap))
+                .distinct()
+                .toList();
+    }
+
+    private Stream<Long> resolveGenreIdForKeyword(String keyword, Map<String, Long> genreMap) {
+        var direct = genreMap.get(keyword);
+        if (direct != null) return Stream.of(direct);
+        for (var word : keyword.split("\\s+")) {
+            var id = genreMap.get(word);
+            if (id != null) return Stream.of(id);
+        }
+        return Stream.empty();
+    }
+
+    private List<String> getUnmatchedKeywords(List<String> keywords, Map<String, Long> genreMap) {
+        return keywords.stream()
+                .filter(k -> !keywordMatchesGenre(k.toLowerCase(), genreMap))
+                .toList();
+    }
+
+    private boolean keywordMatchesGenre(String keyword, Map<String, Long> genreMap) {
+        if (genreMap.containsKey(keyword)) return true;
+        for (var word : keyword.split("\\s+")) {
+            if (genreMap.containsKey(word)) return true;
+        }
+        return false;
+    }
+
+    private Set<Long> collectExcludedMovieIds(Room room) {
+        return room.getParticipants().stream()
+                .filter(p -> !p.isExpulso())
+                .flatMap(p -> ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(p.getUserId()).stream())
+                .map(Rating::getConteudoId)
+                .collect(Collectors.toSet());
     }
 
     private void rollbackAndBroadcastFailure(Room room, List<MovieResponse> previousMovies, RoomStatus previousStatus) {
