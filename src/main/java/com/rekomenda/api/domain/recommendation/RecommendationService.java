@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class RecommendationService {
@@ -52,9 +53,10 @@ public class RecommendationService {
         Object cached = redisTemplate.opsForValue().get(key);
         if (cached instanceof List<?> list && !list.isEmpty()) {
             return list.stream().map(item -> {
-                if (item instanceof MovieResponse) {
-                    return (MovieResponse) item;
-                } else if (item instanceof Map<?, ?> map) {
+                if (item instanceof MovieResponse movieResponse) {
+                    return movieResponse;
+                }
+                if (item instanceof Map<?, ?> map) {
                     return new MovieResponse(
                             ((Number) map.get("id")).longValue(),
                             (String) map.get("title"),
@@ -75,7 +77,7 @@ public class RecommendationService {
     }
 
     private List<MovieResponse> fetchFromTmdb(String userId) {
-        var user = userRepository.findById(java.util.UUID.fromString(userId))
+        var user = userRepository.findById(UUID.fromString(userId))
                 .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
 
         var weights = user.getRecommendationWeights();
