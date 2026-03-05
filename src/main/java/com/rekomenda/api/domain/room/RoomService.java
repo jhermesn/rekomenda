@@ -1,5 +1,6 @@
 package com.rekomenda.api.domain.room;
 
+import com.rekomenda.api.domain.movie.MovieService;
 import com.rekomenda.api.domain.rating.RatingRepository;
 import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
 import com.rekomenda.api.domain.room.dto.RoomEvent;
@@ -36,6 +37,7 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RatingRepository ratingRepository;
+    private final MovieService movieService;
     private final GeminiService geminiService;
     private final TmdbClient tmdbClient;
     private final SimpMessagingTemplate messagingTemplate;
@@ -46,6 +48,7 @@ public class RoomService {
     public RoomService(
             RoomRepository roomRepository,
             RatingRepository ratingRepository,
+            MovieService movieService,
             GeminiService geminiService,
             TmdbClient tmdbClient,
             SimpMessagingTemplate messagingTemplate,
@@ -54,6 +57,7 @@ public class RoomService {
             @Value("${app.room.ttl-minutes}") long roomTtlMinutes) {
         this.roomRepository = roomRepository;
         this.ratingRepository = ratingRepository;
+        this.movieService = movieService;
         this.geminiService = geminiService;
         this.tmdbClient = tmdbClient;
         this.messagingTemplate = messagingTemplate;
@@ -247,8 +251,16 @@ public class RoomService {
                 for (var keyword : unmatchedKeywords) {
                     allMovies.addAll(tmdbClient.searchByKeywords(keyword, perSource));
                 }
+
+                var excludedIds = room.getParticipants().stream()
+                        .filter(p -> !p.isExpulso())
+                        .flatMap(p -> ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(p.getUserId()).stream())
+                        .map(r -> r.getConteudoId())
+                        .collect(Collectors.toSet());
+
                 return allMovies.stream()
                         .filter(m -> m.overview() != null && !m.overview().isBlank())
+                        .filter(m -> !excludedIds.contains(m.id()))
                         .collect(Collectors.toMap(TmdbMovie::id, m -> m, (a, b) -> a))
                         .values().stream()
                         .sorted(Comparator.comparingDouble(TmdbMovie::voteAverage).reversed())
@@ -290,9 +302,9 @@ public class RoomService {
     }
 
     /**
-     * Concatenates each active participant's rating history summary with their
-     * anonymous prompt
-     * to create a rich context for the LLM.
+     * Concatenates each active participant's rating history (with movie titles)
+     * and their prompt to create context for the LLM. Titles help the LLM
+     * avoid suggesting movies participants have already seen.
      */
     private String buildCollectivePrompt(Room room) {
         return room.getParticipants().stream()
@@ -301,10 +313,15 @@ public class RoomService {
                     var ratings = ratingRepository.findByUserIdOrderByDataAvaliacaoDesc(p.getUserId());
                     var ratingSummary = ratings.stream()
                             .limit(10)
-                            .map(r -> r.getTipo().name() + " content ID " + r.getConteudoId())
+                            .map(r -> {
+                                var title = movieService.getTmdbMovieById(r.getConteudoId())
+                                        .map(m -> m.title())
+                                        .orElse("ID " + r.getConteudoId());
+                                return r.getTipo().name() + ": " + title;
+                            })
                             .collect(Collectors.joining(", "));
 
-                    return "Participant: recent ratings=[%s], current desire=[%s]"
+                    return "Participant: already seen/rated=[%s], current desire=[%s]"
                             .formatted(ratingSummary, p.getDescricaoDesejo());
                 })
                 .collect(Collectors.joining("\n"));

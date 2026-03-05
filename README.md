@@ -27,7 +27,7 @@ com.rekomenda.api
 │   ├── user/        # Profile management; recommendation weight vector (JSONB)
 │   ├── rating/      # Like/dislike/skip content; recalculates genre weights
 │   ├── recommendation/ # Personal film feed built from genre weights x TMDB
-│   ├── chat/        # Single-user AI chat -> Gemini extracts intent -> TMDB results
+│   ├── chat/        # Single-user AI chat; Gemini suggests title; TMDB search filtered by user ratings
 │   └── room/        # Collaborative rooms: REST lifecycle + STOMP real-time events
 ├── infrastructure/
 │   ├── ai/          # GeminiService: keyword/genre extraction via Spring AI ChatClient
@@ -64,11 +64,13 @@ com.rekomenda.api
 | `/api/users/me` | REST | Profile read/update |
 | `/api/ratings` | REST | Rate content; view history |
 | `/api/recommendations` | REST | Personalised film feed |
-| `/api/chat/individual` | REST | Single-user AI recommendation chat |
+| `/api/chat/individual` | REST | Single-user AI recommendation chat (excludes already-rated movies) |
 | `/api/movies/{id}` | REST | Movie detail by TMDB ID (Redis-cached, TTL 7 days) |
 | `/api/rooms/**` | REST | Create/join/inspect rooms |
 | `/ws` | WebSocket (STOMP) | Room real-time events |
 | `/swagger-ui.html` | HTTP | Interactive API docs |
+| `/` | HTTP | Redirects to FRONTEND_URL |
+| `/actuator/health` | HTTP | Health check (no auth) |
 
 ### WebSocket message flow
 
@@ -91,7 +93,7 @@ Server -> /topic/room.{roomId}                       -> all room events
 
 ```bash
 cp .env.example .env
-# edit .env with your TMDB key, Vertex AI project, SMTP credentials, JWT secret
+# edit .env with your TMDB key, Vertex AI project, SMTP credentials, JWT secret, CORS_ALLOWED_ORIGIN, FRONTEND_URL
 docker compose up --build
 ```
 
@@ -124,7 +126,7 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 
 ## Database migrations
 
-Flyway runs automatically on startup. Migration scripts live in `src/main/resources/db/migration/`:
+Flyway runs automatically on startup. Migration scripts live in `src/main/resources/db/migration/`.
 
 ## CI/CD
 

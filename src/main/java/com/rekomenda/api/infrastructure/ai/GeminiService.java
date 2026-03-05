@@ -11,6 +11,7 @@ public class GeminiService {
     private static final String KEYWORD_EXTRACTION_PROMPT = """
             You are a movie recommendation assistant. Based on the following user preferences and descriptions,
             extract a list of relevant movie genre keywords in English suitable for a TMDB API search.
+            Participants have "already seen/rated" lists — prefer keywords that suggest NEW movies they haven't seen.
             Return ONLY a comma-separated list of keywords, nothing else.
 
             User data:
@@ -20,8 +21,9 @@ public class GeminiService {
     private static final String INDIVIDUAL_RECOMMENDATION_PROMPT = """
             You are a helpful movie recommendation assistant. The user described what they want to watch:
             "%s"
+            %s
 
-            Suggest ONE movie or series that best matches. Return ONLY the movie title in English, nothing else.
+            Suggest ONE movie or series that best matches and that the user has NOT already seen. Return ONLY the movie title in English, nothing else.
             """;
 
     private final ChatClient chatClient;
@@ -51,10 +53,16 @@ public class GeminiService {
 
     /**
      * Handles an individual user's free-text movie request and returns a single suggested title.
+     * If excludedTitles is non-empty, the LLM is instructed to avoid suggesting those movies.
      */
-    public String recommendForIndividual(String userDescription) {
+    public String recommendForIndividual(String userDescription, List<String> excludedTitles) {
+        var excludeClause = excludedTitles != null && !excludedTitles.isEmpty()
+                ? "The user has ALREADY SEEN these movies (do NOT suggest any of these): " + String.join(", ", excludedTitles)
+                : "";
+        var prompt = INDIVIDUAL_RECOMMENDATION_PROMPT.formatted(userDescription, excludeClause);
+
         var response = chatClient.prompt()
-                .user(INDIVIDUAL_RECOMMENDATION_PROMPT.formatted(userDescription))
+                .user(prompt)
                 .call()
                 .content();
 
