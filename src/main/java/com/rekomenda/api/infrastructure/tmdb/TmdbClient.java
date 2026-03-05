@@ -35,27 +35,35 @@ public class TmdbClient {
         this.apiKey = apiKey;
     }
 
+    private static final String[] DISCOVER_SORT_OPTIONS = {
+            "popularity.desc", "vote_average.desc", "primary_release_date.desc", "vote_count.desc"
+    };
+
     /**
      * Fetches movies filtered by genre IDs from TMDB /discover/movie.
-     * Fetches multiple pages and shuffles with seed for per-caller variety.
+     * Uses varied pages (spread across 1-100) and sort options for higher variety.
      */
-    public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int pageOffset) {
+    public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int seed) {
         var genreParam = genreIds.stream()
                 .map(String::valueOf)
                 .reduce((a, b) -> a + "|" + b)
                 .orElse("");
 
-        int basePage = Math.max(1, (Math.abs(pageOffset) % 20) + 1);
+        var rng = new java.util.Random(seed);
+        String sortBy = DISCOVER_SORT_OPTIONS[rng.nextInt(DISCOVER_SORT_OPTIONS.length)];
+
+        int[] pageBands = {1, 15, 30, 50, 75, 100};
+        int basePage = pageBands[rng.nextInt(pageBands.length)];
         var all = new ArrayList<TmdbMovie>();
 
-        for (int i = 0; i < 3; i++) {
-            int page = basePage + i;
+        for (int i = 0; i < 4; i++) {
+            int page = Math.min(basePage + i, 500);
             var response = restClient.get()
                     .uri(ub -> {
                         var b = ub.path("/discover/movie")
                                 .queryParam(PARAM_API_KEY, apiKey)
                                 .queryParam(PARAM_LANGUAGE, LANGUAGE)
-                                .queryParam("sort_by", "popularity.desc")
+                                .queryParam("sort_by", sortBy)
                                 .queryParam("page", page);
                         if (!genreParam.isBlank()) {
                             b.queryParam("with_genres", genreParam);
@@ -72,27 +80,39 @@ public class TmdbClient {
             }
         }
 
-        Collections.shuffle(all, new java.util.Random(pageOffset));
+        Collections.shuffle(all, new java.util.Random(seed));
         return all.stream().limit(limit).toList();
     }
 
     /**
-     * Searches for movies by keyword using TMDB /search/movie.
+     * Searches for movies by keyword. Fetches multiple pages and shuffles for variety.
+     * @param seed used to vary which pages are fetched and shuffle order
      */
-    public List<TmdbMovie> searchByKeywords(String query, int limit) {
-        var response = restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/search/movie")
-                        .queryParam(PARAM_API_KEY, apiKey)
-                        .queryParam(PARAM_LANGUAGE, LANGUAGE)
-                        .queryParam("query", query)
-                        .build())
-                .retrieve()
-                .body(TmdbPageResponse.class);
+    public List<TmdbMovie> searchByKeywords(String query, int limit, int seed) {
+        var rng = new java.util.Random(seed);
+        int startPage = rng.nextInt(5) + 1;
+        var all = new ArrayList<TmdbMovie>();
 
-        if (response == null || response.results() == null)
-            return List.of();
-        return response.results().stream().limit(limit).toList();
+        for (int p = 0; p < 3; p++) {
+            int page = Math.min(startPage + p, 500);
+            var response = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/search/movie")
+                            .queryParam(PARAM_API_KEY, apiKey)
+                            .queryParam(PARAM_LANGUAGE, LANGUAGE)
+                            .queryParam("query", query)
+                            .queryParam("page", page)
+                            .build())
+                    .retrieve()
+                    .body(TmdbPageResponse.class);
+
+            if (response == null || response.results() == null || response.results().isEmpty())
+                break;
+            all.addAll(response.results());
+        }
+
+        Collections.shuffle(all, new java.util.Random(seed));
+        return all.stream().limit(limit).toList();
     }
 
     /**

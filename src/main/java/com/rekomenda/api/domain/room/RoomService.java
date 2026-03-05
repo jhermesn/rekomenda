@@ -266,11 +266,15 @@ public class RoomService {
         int movieLimit = (int) (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2);
         int perSource = Math.max(movieLimit, 6);
 
+        int seed = room.getId().hashCode() ^ (int) (System.currentTimeMillis() / 1000);
+
         var allMovies = new ArrayList<TmdbMovie>();
         if (!matchedGenreIds.isEmpty()) {
-            allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, room.getId().hashCode()));
+            allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, seed));
         }
-        unmatchedKeywords.forEach(kw -> allMovies.addAll(tmdbClient.searchByKeywords(kw, perSource)));
+        for (var kw : unmatchedKeywords) {
+            allMovies.addAll(tmdbClient.searchByKeywords(kw, perSource, seed + kw.hashCode()));
+        }
 
         var excludedIds = collectExcludedMovieIds(room);
 

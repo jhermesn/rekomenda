@@ -72,7 +72,8 @@ public class ChatService {
             throw new BusinessException("Não foi possível gerar uma recomendação", HttpStatus.SERVICE_UNAVAILABLE);
         }
 
-        var results = tmdbClient.searchByKeywords(suggestedTitle, SEARCH_RESULTS_TO_FILTER)
+        int seed = userId.hashCode() ^ (int) System.currentTimeMillis();
+        var results = tmdbClient.searchByKeywords(suggestedTitle, SEARCH_RESULTS_TO_FILTER, seed)
                 .stream()
                 .filter(m -> !excludedIds.contains(m.id()))
                 .toList();
