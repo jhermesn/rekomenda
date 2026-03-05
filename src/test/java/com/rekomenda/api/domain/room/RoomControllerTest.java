@@ -26,9 +26,10 @@ class RoomControllerTest {
                 hostId,
                 RoomStatus.AGUARDANDO,
                 Instant.now(),
-                "http://localhost/rooms/" + roomId + "/join",
-                List.of()
-        );
+                "http://localhost/rooms/" + roomId,
+                List.of(),
+                List.of(),
+                null);
     }
 
     @Test
@@ -70,4 +71,3 @@ class RoomControllerTest {
         verify(roomService).getRoom(roomId);
     }
 }
-

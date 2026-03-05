@@ -39,8 +39,7 @@ public class AuthService {
             AuthenticationManager authenticationManager,
             JwtService jwtService,
             MailService mailService,
-            @Value("${app.frontend-url}") String frontendUrl
-    ) {
+            @Value("${app.frontend-url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.resetTokenRepository = resetTokenRepository;
         this.passwordEncoder = passwordEncoder;
@@ -73,8 +72,7 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.email(), request.senha())
-            );
+                    new UsernamePasswordAuthenticationToken(request.email(), request.senha()));
         } catch (AuthenticationException _) {
             throw new BusinessException("E-mail ou senha incorretos", HttpStatus.UNAUTHORIZED);
         }

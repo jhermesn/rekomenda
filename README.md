@@ -34,7 +34,7 @@ com.rekomenda.api
 │   ├── tmdb/        # TmdbClient: movie search/detail via RestClient
 │   └── mail/        # MailService: password-reset e-mails via JavaMailSender
 └── shared/
-    ├── exception/   # GlobalExceptionHandler, BusinessException, ErrorResponse
+    ├── exception/   # GlobalExceptionHandler, BusinessException, RecommendationGenerationException, ErrorResponse
     └── security/    # JwtService, JwtAuthFilter, JwtChannelInterceptor, UserDetailsServiceImpl
 ```
 
@@ -65,6 +65,7 @@ com.rekomenda.api
 | `/api/ratings` | REST | Rate content; view history |
 | `/api/recommendations` | REST | Personalised film feed |
 | `/api/chat/individual` | REST | Single-user AI recommendation chat |
+| `/api/movies/{id}` | REST | Movie detail by TMDB ID (Redis-cached, TTL 7 days) |
 | `/api/rooms/**` | REST | Create/join/inspect rooms |
 | `/ws` | WebSocket (STOMP) | Room real-time events |
 | `/swagger-ui.html` | HTTP | Interactive API docs |
@@ -72,11 +73,13 @@ com.rekomenda.api
 ### WebSocket message flow
 
 ```
-Client -> /app/room.{roomId}.join            -> broadcasts RoomEvent(PARTICIPANT_JOINED)
-Client -> /app/room.{roomId}.submit-prompt   -> triggers Gemini + TMDB, broadcasts FILMS_SUGGESTED
-Client -> /app/room.{roomId}.choose-film     -> broadcasts FILM_CHOSEN
-Client -> /app/room.{roomId}.leave/kick/close/more-recommendations
-Server -> /topic/room.{roomId}               -> all room events
+Client -> /app/room.{roomId}.join                    -> broadcasts RoomEvent(PARTICIPANT_JOINED)
+Client -> /app/room.{roomId}.submit-prompt           -> marks participant ready, broadcasts PARTICIPANT_READY
+Client -> /app/room.{roomId}.generate-recommendations -> (host only) runs Gemini + TMDB, broadcasts RECOMMENDATIONS_READY or RECOMMENDATIONS_FAILED
+Client -> /app/room.{roomId}.choose-film             -> broadcasts FILM_CHOSEN
+Client -> /app/room.{roomId}.reset                   -> (host only) resets room to allow a new round
+Client -> /app/room.{roomId}.leave | kick | close
+Server -> /topic/room.{roomId}                       -> all room events
 ```
 
 ## Running locally
@@ -111,6 +114,8 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 |---|---|---|---|
 | `jwt:blacklist:{jti}` | String | Remaining token lifetime | Revoked JWT: presence means "deny this token" |
 | `room:{roomId}` | String (JSON) | 30 min | Full `Room` object including participants and suggested films |
+| `tmdb:movie:{tmdbId}` | String (JSON) | 7 days (configurable via `TMDB_MOVIE_CACHE_TTL_DAYS`) | Cached `TmdbMovie` — avoids redundant TMDB API calls for movie detail lookups |
+| `rec:dashboard:{userId}` | String (JSON) | 5 min (configurable via `RECOMMENDATION_DASHBOARD_CACHE_TTL_MINUTES`) | Cached personalised dashboard — invalidated automatically when the user rates a movie |
 
 **Usage:**
 - `JwtService` writes `jwt:blacklist:{jti}` on logout; `JwtAuthFilter` checks existence on each request.

@@ -8,6 +8,9 @@ target/
 # Log file
 *.log
 
+# GCP service account credentials
+gcp-credentials.json
+
 # BlueJ files
 *.ctxt
 

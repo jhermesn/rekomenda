@@ -13,7 +13,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Intercepts every request to check if the JWT's jti is in the Redis blacklist (i.e. logged out).
+ * Intercepts every request to check if the JWT's jti is in the Redis blacklist
+ * (i.e. logged out).
  * Runs before the standard OAuth2 resource server filter chain.
  */
 @Component

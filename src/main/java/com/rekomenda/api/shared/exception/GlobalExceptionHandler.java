@@ -21,6 +21,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ex.getStatus()).body(body);
     }
 
+    @ExceptionHandler(RecommendationGenerationException.class)
+    public ResponseEntity<ErrorResponse> handleRecommendationGenerationException(RecommendationGenerationException ex) {
+        log.error("Recommendation generation failed", ex);
+        var body = ErrorResponse.of(
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Service Unavailable",
+                "Não foi possível gerar recomendações. Tente novamente em alguns instantes."
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
         List<ErrorResponse.FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()

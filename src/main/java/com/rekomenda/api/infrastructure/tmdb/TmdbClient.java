@@ -5,9 +5,12 @@ import com.rekomenda.api.infrastructure.tmdb.dto.TmdbPageResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Component
 public class TmdbClient {
@@ -22,15 +25,16 @@ public class TmdbClient {
     public TmdbClient(
             RestClient.Builder restClientBuilder,
             @Value("${app.tmdb.base-url}") String baseUrl,
-            @Value("${app.tmdb.api-key}") String apiKey
-    ) {
-        this.restClient = restClientBuilder.baseUrl(baseUrl).build();
+            @Value("${app.tmdb.api-key}") String apiKey) {
+        var factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(15000);
+        this.restClient = restClientBuilder.baseUrl(baseUrl).requestFactory(factory).build();
         this.apiKey = apiKey;
     }
 
     /**
      * Fetches a page of movies filtered by genre IDs from TMDB /discover/movie.
-     * Limits results to the requested count (TMDB always returns up to 20 per page).
      */
     public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit) {
         var genreParam = genreIds.stream()
@@ -49,7 +53,8 @@ public class TmdbClient {
                 .retrieve()
                 .body(TmdbPageResponse.class);
 
-        if (response == null || response.results() == null) return List.of();
+        if (response == null || response.results() == null)
+            return List.of();
         return response.results().stream().limit(limit).toList();
     }
 
@@ -67,14 +72,16 @@ public class TmdbClient {
                 .retrieve()
                 .body(TmdbPageResponse.class);
 
-        if (response == null || response.results() == null) return List.of();
+        if (response == null || response.results() == null)
+            return List.of();
         return response.results().stream().limit(limit).toList();
     }
 
     /**
      * Fetches full movie details including genre list from TMDB /movie/{id}.
+     * Returns a typed TmdbMovie suitable for caching.
      */
-    public Map<String, Object> getMovieDetails(long movieId) {
+    public TmdbMovie fetchById(long movieId) {
         return restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/movie/{id}")
@@ -82,6 +89,36 @@ public class TmdbClient {
                         .queryParam(PARAM_LANGUAGE, LANGUAGE)
                         .build(movieId))
                 .retrieve()
-                .body(new org.springframework.core.ParameterizedTypeReference<>() {});
+                .body(TmdbMovie.class);
+    }
+
+    /**
+     * Fetches the list of official TMDB genres and returns a map from
+     * lowercase genre name -> genre id. Used to resolve Gemini keyword output
+     * to proper genre IDs for /discover/movie queries.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Long> fetchGenreMap() {
+        var response = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/genre/movie/list")
+                        .queryParam(PARAM_API_KEY, apiKey)
+                        .queryParam(PARAM_LANGUAGE, LANGUAGE)
+                        .build())
+                .retrieve()
+                .body(LinkedHashMap.class);
+
+        if (response == null || !response.containsKey("genres"))
+            return Map.of();
+
+        var genres = (List<Map<String, Object>>) response.get("genres");
+        if (genres == null)
+            return Map.of();
+
+        return genres.stream()
+                .collect(Collectors.toMap(
+                        g -> ((String) g.get("name")).toLowerCase(),
+                        g -> ((Number) g.get("id")).longValue(),
+                        (a, b) -> a));
     }
 }

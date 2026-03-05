@@ -50,7 +50,7 @@ services:
       REDIS_PASSWORD: ""
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
     volumes:
-      - ./rekomenda-app-d52334709d79.json:/app/gcp-credentials.json:ro
+      - ./gcp-credentials.json:/app/gcp-credentials.json:ro
 
 volumes:
   postgres_data:

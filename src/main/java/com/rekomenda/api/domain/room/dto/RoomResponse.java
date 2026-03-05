@@ -1,5 +1,6 @@
 package com.rekomenda.api.domain.room.dto;
 
+import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
 import com.rekomenda.api.domain.room.Room;
 import com.rekomenda.api.domain.room.RoomStatus;
 
@@ -13,14 +14,16 @@ public record RoomResponse(
         RoomStatus status,
         Instant createdAt,
         String inviteLink,
-        List<ParticipantInfo> participants
-) {
-    public record ParticipantInfo(UUID userId, String status) {}
+        List<ParticipantInfo> participants,
+        List<MovieResponse> filmesRecomendados,
+        MovieResponse chosenMovie) {
+
+    public record ParticipantInfo(UUID userId, String status, String nome, String username) {}
 
     public static RoomResponse from(Room room, String baseUrl) {
         var participants = room.getParticipants().stream()
                 .filter(p -> !p.isExpulso())
-                .map(p -> new ParticipantInfo(p.getUserId(), p.getStatus().name()))
+                .map(p -> new ParticipantInfo(p.getUserId(), p.getStatus().name(), p.getNome(), p.getUsername()))
                 .toList();
 
         return new RoomResponse(
@@ -28,8 +31,9 @@ public record RoomResponse(
                 room.getHostId(),
                 room.getStatus(),
                 room.getCreatedAt(),
-                baseUrl + "/rooms/" + room.getId() + "/join",
-                participants
-        );
+                baseUrl + "/rooms/" + room.getId(),
+                participants,
+                room.getFilmesRecomendados(),
+                room.getFilmeEscolhido());
     }
 }
