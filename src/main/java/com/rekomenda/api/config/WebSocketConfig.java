@@ -46,7 +46,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             var uri = URI.create(base);
             var origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
             return List.of(origin, base, base + "/");
-        } catch (Exception e) {
+        } catch (Exception _) {
             return List.of(base);
         }
     }
