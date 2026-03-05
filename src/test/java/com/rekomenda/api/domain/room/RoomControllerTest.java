@@ -26,7 +26,7 @@ class RoomControllerTest {
                 hostId,
                 RoomStatus.AGUARDANDO,
                 Instant.now(),
-                "http://localhost/rooms/" + roomId + "/join",
+                "http://localhost/rooms/" + roomId,
                 List.of(),
                 List.of(),
                 null);

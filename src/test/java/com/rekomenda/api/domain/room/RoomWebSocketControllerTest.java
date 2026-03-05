@@ -92,8 +92,8 @@ class RoomWebSocketControllerTest {
     }
 
     @Test
-    @DisplayName("@MessageMapping room.more-recommendations delega para RoomService.requestMoreRecommendations")
-    void generateRecommendations_shouldCallService() {
+    @DisplayName("@MessageMapping room.generate-recommendations delega para RoomService.generateRecommendations")
+    void generateRecommendations_delegatesToService() {
         String roomId = "room-123";
         UUID hostId = UUID.randomUUID();
         Principal principal = mock(Principal.class);
@@ -102,6 +102,18 @@ class RoomWebSocketControllerTest {
         controller.generateRecommendations(roomId, principal);
 
         verify(roomService).generateRecommendations(roomId, hostId);
+    }
+
+    @Test
+    @DisplayName("@MessageMapping room.reset delega para RoomService.resetRoom")
+    void resetRoom_delegatesToService() {
+        var roomId = "room-1";
+        var hostId = UUID.randomUUID();
+        var principal = principalWithSubject(hostId);
+
+        controller.resetRoom(roomId, principal);
+
+        verify(roomService).resetRoom(roomId, hostId);
     }
 
     @Test

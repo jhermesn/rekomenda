@@ -34,7 +34,7 @@ com.rekomenda.api
 │   ├── tmdb/        # TmdbClient: movie search/detail via RestClient
 │   └── mail/        # MailService: password-reset e-mails via JavaMailSender
 └── shared/
-    ├── exception/   # GlobalExceptionHandler, BusinessException, ErrorResponse
+    ├── exception/   # GlobalExceptionHandler, BusinessException, RecommendationGenerationException, ErrorResponse
     └── security/    # JwtService, JwtAuthFilter, JwtChannelInterceptor, UserDetailsServiceImpl
 ```
 
@@ -73,11 +73,13 @@ com.rekomenda.api
 ### WebSocket message flow
 
 ```
-Client -> /app/room.{roomId}.join            -> broadcasts RoomEvent(PARTICIPANT_JOINED)
-Client -> /app/room.{roomId}.submit-prompt   -> triggers Gemini + TMDB, broadcasts FILMS_SUGGESTED
-Client -> /app/room.{roomId}.choose-film     -> broadcasts FILM_CHOSEN
-Client -> /app/room.{roomId}.leave/kick/close/more-recommendations
-Server -> /topic/room.{roomId}               -> all room events
+Client -> /app/room.{roomId}.join                    -> broadcasts RoomEvent(PARTICIPANT_JOINED)
+Client -> /app/room.{roomId}.submit-prompt           -> marks participant ready, broadcasts PARTICIPANT_READY
+Client -> /app/room.{roomId}.generate-recommendations -> (host only) runs Gemini + TMDB, broadcasts RECOMMENDATIONS_READY or RECOMMENDATIONS_FAILED
+Client -> /app/room.{roomId}.choose-film             -> broadcasts FILM_CHOSEN
+Client -> /app/room.{roomId}.reset                   -> (host only) resets room to allow a new round
+Client -> /app/room.{roomId}.leave | kick | close
+Server -> /topic/room.{roomId}                       -> all room events
 ```
 
 ## Running locally
