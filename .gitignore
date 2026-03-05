@@ -8,8 +8,8 @@ target/
 # Log file
 *.log
 
-./rekomenda-4a84b6fa8c1d.json
-rekomenda-4a84b6fa8c1d.json
+# GCP service account credentials
+gcp-credentials.json
 
 # BlueJ files
 *.ctxt
