@@ -4,6 +4,7 @@ import com.rekomenda.api.domain.rating.RatingRepository;
 import com.rekomenda.api.domain.recommendation.dto.MovieResponse;
 import com.rekomenda.api.domain.room.dto.RoomEvent;
 import com.rekomenda.api.domain.room.dto.RoomResponse;
+import com.rekomenda.api.domain.user.UserRepository;
 import com.rekomenda.api.infrastructure.ai.GeminiService;
 import com.rekomenda.api.infrastructure.tmdb.TmdbClient;
 import com.rekomenda.api.shared.exception.BusinessException;
@@ -11,12 +12,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class RoomService {
 
@@ -25,6 +29,7 @@ public class RoomService {
     private final GeminiService geminiService;
     private final TmdbClient tmdbClient;
     private final SimpMessagingTemplate messagingTemplate;
+    private final UserRepository userRepository;
     private final String frontendUrl;
     private final long roomTtlMinutes;
 
@@ -34,21 +39,24 @@ public class RoomService {
             GeminiService geminiService,
             TmdbClient tmdbClient,
             SimpMessagingTemplate messagingTemplate,
+            UserRepository userRepository,
             @Value("${app.frontend-url}") String frontendUrl,
-            @Value("${app.room.ttl-minutes}") long roomTtlMinutes
-    ) {
+            @Value("${app.room.ttl-minutes}") long roomTtlMinutes) {
         this.roomRepository = roomRepository;
         this.ratingRepository = ratingRepository;
         this.geminiService = geminiService;
         this.tmdbClient = tmdbClient;
         this.messagingTemplate = messagingTemplate;
+        this.userRepository = userRepository;
         this.frontendUrl = frontendUrl;
         this.roomTtlMinutes = roomTtlMinutes;
     }
 
     public RoomResponse createRoom(UUID hostId) {
+        var user = userRepository.findById(hostId)
+                .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
         var room = Room.create(hostId);
-        room.getParticipants().add(RoomParticipant.join(hostId, null));
+        room.getParticipants().add(RoomParticipant.join(hostId, null, user.getNome(), user.getUsername()));
         roomRepository.save(room);
         return RoomResponse.from(room, frontendUrl);
     }
@@ -62,6 +70,9 @@ public class RoomService {
         var room = findRoom(roomId);
         assertRoomActive(room);
 
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException("Usuário não encontrado", HttpStatus.NOT_FOUND));
+
         var wasKicked = room.getParticipants().stream()
                 .anyMatch(p -> p.getUserId().equals(userId) && p.isExpulso());
         if (wasKicked) {
@@ -71,7 +82,7 @@ public class RoomService {
         var alreadyIn = room.getParticipants().stream()
                 .anyMatch(p -> p.getUserId().equals(userId) && !p.isExpulso());
         if (!alreadyIn) {
-            room.getParticipants().add(RoomParticipant.join(userId, sessionId));
+            room.getParticipants().add(RoomParticipant.join(userId, sessionId, user.getNome(), user.getUsername()));
             roomRepository.save(room);
         }
 
@@ -112,22 +123,47 @@ public class RoomService {
 
         roomRepository.save(room);
         broadcast(roomId, RoomEvent.of(RoomEvent.EventType.PARTICIPANT_READY, userId));
-
-        if (room.allParticipantsReady()) {
-            generateCollectiveRecommendations(room);
-        }
     }
 
-    public void requestMoreRecommendations(String roomId) {
+    public void generateRecommendations(String roomId, UUID hostId) {
         var room = findRoom(roomId);
+        assertIsHost(room, hostId);
+        if (!room.allParticipantsReady()) {
+            throw new BusinessException("Todos os participantes devem estar prontos", HttpStatus.BAD_REQUEST);
+        }
         generateCollectiveRecommendations(room);
     }
 
     public void chooseFilm(String roomId, Long movieId) {
         var room = findRoom(roomId);
         room.setStatus(RoomStatus.FINALIZADA);
+
+        room.getFilmesRecomendados().stream()
+                .filter(m -> m.id() == movieId)
+                .findFirst()
+                .ifPresent(room::setFilmeEscolhido);
+
         roomRepository.save(room);
         broadcast(roomId, RoomEvent.of(RoomEvent.EventType.FILM_CHOSEN, movieId));
+    }
+
+    public void resetRoom(String roomId, UUID hostId) {
+        var room = findRoom(roomId);
+        assertIsHost(room, hostId);
+
+        room.setFilmeEscolhido(null);
+        room.setFilmesRecomendados(new java.util.ArrayList<>());
+        room.setStatus(RoomStatus.AGUARDANDO);
+
+        room.getParticipants().stream()
+                .filter(p -> !p.isExpulso())
+                .forEach(p -> {
+                    p.setStatus(ParticipantStatus.PENDENTE);
+                    p.setDescricaoDesejo(null);
+                });
+
+        roomRepository.save(room);
+        broadcast(roomId, RoomEvent.of(RoomEvent.EventType.ROOM_RESET, null));
     }
 
     public void closeRoom(String roomId, UUID hostId) {
@@ -166,38 +202,77 @@ public class RoomService {
         roomRepository.save(room);
 
         try {
+            log.info("Iniciando geração de recomendações para a sala {}", room.getId());
             var combinedPrompt = buildCollectivePrompt(room);
-            var keywords = geminiService.extractKeywords(combinedPrompt);
-            var movieLimit = room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2;
+            log.info("Prompt montado para Gemini: {}", combinedPrompt);
+            var movies = CompletableFuture.supplyAsync(() -> {
+                var keywords = geminiService.extractKeywords(combinedPrompt);
+                log.info("Keywords extraídas pelo Gemini: {}", keywords);
 
-            var movies = keywords.stream()
-                    .flatMap(keyword -> tmdbClient.searchByKeywords(keyword, (int) movieLimit).stream())
-                    .distinct()
-                    .limit(movieLimit)
-                    .map(MovieResponse::from)
-                    .toList();
+                var genreMap = tmdbClient.fetchGenreMap();
+                log.info("Mapa de gêneros TMDB: {} entradas", genreMap.size());
+
+                var matchedGenreIds = keywords.stream()
+                        .map(String::toLowerCase)
+                        .map(k -> genreMap.getOrDefault(k, null))
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .toList();
+
+                var unmatchedKeywords = keywords.stream()
+                        .filter(k -> !genreMap.containsKey(k.toLowerCase()))
+                        .toList();
+
+                log.info("Gêneros resolvidos: {}, keywords sem match: {}", matchedGenreIds, unmatchedKeywords);
+
+                int movieLimit = (int) (room.getParticipants().stream().filter(p -> !p.isExpulso()).count() * 2);
+                int perSource = Math.max(movieLimit, 6);
+
+                var allMovies = new java.util.ArrayList<com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie>();
+
+                if (!matchedGenreIds.isEmpty()) {
+                    allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource));
+                }
+
+                for (var keyword : unmatchedKeywords) {
+                    allMovies.addAll(tmdbClient.searchByKeywords(keyword, perSource));
+                }
+                return allMovies.stream()
+                        .filter(m -> m.overview() != null && !m.overview().isBlank())
+                        .collect(java.util.stream.Collectors.toMap(
+                                com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie::id,
+                                m -> m,
+                                (a, b) -> a))
+                        .values().stream()
+                        .sorted(java.util.Comparator.comparingDouble(
+                                com.rekomenda.api.infrastructure.tmdb.dto.TmdbMovie::voteAverage).reversed())
+                        .limit(movieLimit)
+                        .map(MovieResponse::from)
+                        .toList();
+            }).get(30, TimeUnit.SECONDS);
 
             room.setFilmesRecomendados(List.copyOf(movies));
             room.setStatus(RoomStatus.AGUARDANDO);
             roomRepository.save(room);
 
+            log.info("Recomendações geradas com sucesso. {} filmes encontrados.", movies.size());
             broadcast(room.getId(), RoomEvent.of(RoomEvent.EventType.RECOMMENDATIONS_READY, movies));
-        } catch (RuntimeException ex) {
-            // rollback para o último estado consistente
+        } catch (Exception ex) {
+            log.error("Erro ao gerar recomendações coletivas para a sala {}", room.getId(), ex);
             room.setFilmesRecomendados(previousMovies);
             room.setStatus(previousStatus);
             roomRepository.save(room);
 
             broadcast(room.getId(), RoomEvent.of(
                     RoomEvent.EventType.RECOMMENDATIONS_FAILED,
-                    "Não foi possível gerar recomendações coletivas. Tente novamente em alguns instantes."
-            ));
-            throw ex;
+                    "Não foi possível gerar recomendações coletivas. Tente novamente em alguns instantes."));
+            throw new RuntimeException(ex);
         }
     }
 
     /**
-     * Concatenates each active participant's rating history summary with their anonymous prompt
+     * Concatenates each active participant's rating history summary with their
+     * anonymous prompt
      * to create a rich context for the LLM.
      */
     private String buildCollectivePrompt(Room room) {

@@ -65,6 +65,7 @@ com.rekomenda.api
 | `/api/ratings` | REST | Rate content; view history |
 | `/api/recommendations` | REST | Personalised film feed |
 | `/api/chat/individual` | REST | Single-user AI recommendation chat |
+| `/api/movies/{id}` | REST | Movie detail by TMDB ID (Redis-cached, TTL 7 days) |
 | `/api/rooms/**` | REST | Create/join/inspect rooms |
 | `/ws` | WebSocket (STOMP) | Room real-time events |
 | `/swagger-ui.html` | HTTP | Interactive API docs |
@@ -111,6 +112,8 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 |---|---|---|---|
 | `jwt:blacklist:{jti}` | String | Remaining token lifetime | Revoked JWT: presence means "deny this token" |
 | `room:{roomId}` | String (JSON) | 30 min | Full `Room` object including participants and suggested films |
+| `tmdb:movie:{tmdbId}` | String (JSON) | 7 days (configurable via `TMDB_MOVIE_CACHE_TTL_DAYS`) | Cached `TmdbMovie` — avoids redundant TMDB API calls for movie detail lookups |
+| `rec:dashboard:{userId}` | String (JSON) | 5 min (configurable via `RECOMMENDATION_DASHBOARD_CACHE_TTL_MINUTES`) | Cached personalised dashboard — invalidated automatically when the user rates a movie |
 
 **Usage:**
 - `JwtService` writes `jwt:blacklist:{jti}` on logout; `JwtAuthFilter` checks existence on each request.
