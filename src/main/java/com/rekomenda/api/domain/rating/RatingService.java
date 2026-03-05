@@ -80,9 +80,10 @@ public class RatingService {
      * the rating delta to the user's genre weight map, then normalises the map.
      */
     private void updateRecommendationWeights(User user, Long conteudoId, RatingType tipo) {
-        var movie = movieService.getTmdbMovieById(conteudoId);
-        if (movie == null || movie.genreIds() == null || movie.genreIds().isEmpty())
-            return;
+        var movieOpt = movieService.getTmdbMovieById(conteudoId);
+        if (movieOpt.isEmpty()) return;
+        var movie = movieOpt.get();
+        if (movie.genreIds() == null || movie.genreIds().isEmpty()) return;
 
         var weights = new HashMap<>(user.getRecommendationWeights());
         var delta = tipo.getDelta() * DECAY_FACTOR;

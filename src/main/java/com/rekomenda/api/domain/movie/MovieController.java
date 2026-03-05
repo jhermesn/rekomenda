@@ -27,10 +27,6 @@ public class MovieController {
     @GetMapping("/{id}")
     @Operation(summary = "Retorna detalhes de um filme pelo ID do TMDB (Redis-cached, TTL 7 dias)")
     public ResponseEntity<MovieResponse> getById(@PathVariable long id) {
-        MovieResponse movie = movieService.getById(id);
-        if (movie == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(movie);
+        return ResponseEntity.of(movieService.getById(id));
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Optional;
 
 /**
  * Fetches movie details from TMDB, using Redis as a read-through cache.
@@ -41,9 +42,8 @@ public class MovieService {
      * Returns movie details for the given TMDB ID as an API response object.
      * Checks Redis first; on cache miss, fetches from TMDB and stores the result.
      */
-    public MovieResponse getById(long tmdbId) {
-        TmdbMovie movie = getTmdbMovieById(tmdbId);
-        return movie != null ? MovieResponse.from(movie) : null;
+    public Optional<MovieResponse> getById(long tmdbId) {
+        return getTmdbMovieById(tmdbId).map(MovieResponse::from);
     }
 
     /**
@@ -51,18 +51,18 @@ public class MovieService {
      * Used internally by RatingService for genre weight updates.
      * Shares the same Redis cache entry as getById().
      */
-    public TmdbMovie getTmdbMovieById(long tmdbId) {
-        String key = CACHE_PREFIX + tmdbId;
+    public Optional<TmdbMovie> getTmdbMovieById(long tmdbId) {
+        var key = CACHE_PREFIX + tmdbId;
 
-        Object cached = redisTemplate.opsForValue().get(key);
+        var cached = redisTemplate.opsForValue().get(key);
         if (cached instanceof TmdbMovie movie) {
-            return movie;
+            return Optional.of(movie);
         }
 
-        TmdbMovie movie = tmdbClient.fetchById(tmdbId);
+        var movie = tmdbClient.fetchById(tmdbId);
         if (movie != null) {
             redisTemplate.opsForValue().set(key, movie, cacheTtl);
         }
-        return movie;
+        return Optional.ofNullable(movie);
     }
 }
