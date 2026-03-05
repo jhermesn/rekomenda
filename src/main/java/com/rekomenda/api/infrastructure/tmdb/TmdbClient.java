@@ -34,22 +34,29 @@ public class TmdbClient {
     }
 
     /**
-     * Fetches a page of movies filtered by genre IDs from TMDB /discover/movie.
+     * Fetches movies filtered by genre IDs from TMDB /discover/movie.
+     * Uses pageOffset to vary results per caller (e.g. derived from userId hash).
      */
-    public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit) {
+    public List<TmdbMovie> discoverByGenres(List<Long> genreIds, int limit, int pageOffset) {
         var genreParam = genreIds.stream()
                 .map(String::valueOf)
                 .reduce((a, b) -> a + "|" + b)
                 .orElse("");
 
+        int page = Math.max(1, (pageOffset % 10) + 1);
+
         var response = restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/discover/movie")
-                        .queryParam(PARAM_API_KEY, apiKey)
-                        .queryParam(PARAM_LANGUAGE, LANGUAGE)
-                        .queryParam("with_genres", genreParam)
-                        .queryParam("sort_by", "popularity.desc")
-                        .build())
+                .uri(ub -> {
+                    var b = ub.path("/discover/movie")
+                            .queryParam(PARAM_API_KEY, apiKey)
+                            .queryParam(PARAM_LANGUAGE, LANGUAGE)
+                            .queryParam("sort_by", "popularity.desc")
+                            .queryParam("page", page);
+                    if (!genreParam.isBlank()) {
+                        b.queryParam("with_genres", genreParam);
+                    }
+                    return b.build();
+                })
                 .retrieve()
                 .body(TmdbPageResponse.class);
 

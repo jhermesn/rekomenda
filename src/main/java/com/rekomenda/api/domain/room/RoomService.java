@@ -241,7 +241,7 @@ public class RoomService {
                 var allMovies = new ArrayList<TmdbMovie>();
 
                 if (!matchedGenreIds.isEmpty()) {
-                    allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource));
+                    allMovies.addAll(tmdbClient.discoverByGenres(matchedGenreIds, perSource, room.getId().hashCode()));
                 }
 
                 for (var keyword : unmatchedKeywords) {

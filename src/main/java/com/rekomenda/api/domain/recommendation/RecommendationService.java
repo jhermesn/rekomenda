@@ -82,8 +82,10 @@ public class RecommendationService {
 
         var weights = user.getRecommendationWeights();
 
+        int pageOffset = userId.hashCode();
+
         if (weights.isEmpty()) {
-            return tmdbClient.discoverByGenres(List.of(), DASHBOARD_LIMIT)
+            return tmdbClient.discoverByGenres(List.of(), DASHBOARD_LIMIT, pageOffset)
                     .stream().map(MovieResponse::from).toList();
         }
 
@@ -94,7 +96,7 @@ public class RecommendationService {
                 .map(e -> Long.parseLong(e.getKey()))
                 .toList();
 
-        return tmdbClient.discoverByGenres(topGenreIds, DASHBOARD_LIMIT)
+        return tmdbClient.discoverByGenres(topGenreIds, DASHBOARD_LIMIT, pageOffset)
                 .stream().map(MovieResponse::from).toList();
     }
 }
